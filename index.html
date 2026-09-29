@@ -12,6 +12,14 @@
 <link rel="stylesheet" href="site.css" />
 </head>
 <body data-tab="home">
+<div id="auth-gate" class="auth-gate">
+  <div class="auth-box">
+    <span class="proj-kicker">DAMAROO ARTS · PRIVATE</span>
+    <h1 id="auth-title">Checking access.</h1>
+    <p id="auth-message">Verifying your authorised Google account...</p>
+    <button id="auth-retry" type="button" hidden>Retry</button>
+  </div>
+</div>
 
 <header class="site-header">
   <a class="mark" href="#home" data-tab="home" aria-label="Damaroo Arts, home"><span class="mark-dot"></span>DAMAROO ARTS</a>
@@ -21,7 +29,10 @@
     <button class="tab" role="tab" id="tab-tool" data-tab="tool" aria-selected="false" aria-controls="view-tool" tabindex="-1">Storyboard<span class="tab-long">&nbsp;Simulator</span></button>
     <button class="tab" role="tab" id="tab-projects" data-tab="projects" aria-selected="false" aria-controls="view-projects" tabindex="-1">Projects</button>
   </nav>
-  <span></span>
+  <div class="user-chip" id="user-chip" hidden>
+    <span id="user-name"></span>
+    <span id="user-role"></span>
+  </div>
 </header>
 
 <div class="stage-wrap">
@@ -121,12 +132,13 @@
           </div>
 
           <div class="script-reader" id="script-reader">
-            <div class="script-empty">
+            <div class="script-empty" id="script-empty">
               <div class="script-icon">S</div>
-              <h4>Script access</h4>
-              <p>The production script will appear here for authorised readers. Downloading the source Word file is disabled.</p>
-              <span class="reader-note">PRIVATE DOCUMENT · READ ONLY</span>
+              <h4>Loading screenplay.</h4>
+              <p>Fetching the latest authorised screenplay from the private production store.</p>
+              <span class="reader-note">PRIVATE DOCUMENT · LATEST VERSION ONLY</span>
             </div>
+            <iframe id="script-frame" title="Latest screenplay" hidden></iframe>
           </div>
         </section>
 
@@ -139,7 +151,8 @@
               </div>
               <span class="comment-count">0</span>
             </div>
-            <div class="discussion-empty">
+            <div class="discussion-list" id="discussion-list"></div>
+            <div class="discussion-empty" id="discussion-empty">
               <span class="discussion-mark">+</span>
               <p>Comments anchored to the script will appear here.</p>
               <span>AUTHOR · COMMENT · LOCATION · TIME</span>
@@ -155,7 +168,7 @@
             </div>
             <div class="log-empty">
               <span>No script updates yet.</span>
-              <small>Version history will be visible to authorised users.</small>
+              <small>Previous screenplay versions remain private to the production backend.</small>
             </div>
           </section>
         </aside>
@@ -166,6 +179,6 @@
   <div class="wipe" aria-hidden="true"></div>
 </div>
 
-<script src="site.js"></script>
+<script type="module" src="site.js"></script>
 </body>
 </html>

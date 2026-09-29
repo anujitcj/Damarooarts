@@ -7,6 +7,70 @@ const tabs = $$('.tab'), ink = $('.tab-ink'), wipe = $('.wipe');
 const view = t => $('#view-' + t);
 let cur = null, busy = false, toolLoaded = false;
 
+/* ---------- authenticated API ---------- */
+const state = { user: null, project: null, comments: [] };
+
+async function api(path, options = {}) {
+  const response = await fetch(`/api/${path}`, {
+    credentials: 'same-origin',
+    ...options
+  });
+  const type = response.headers.get('content-type') || '';
+  const data = type.includes('application/json') ? await response.json() : null;
+
+  if (!response.ok) {
+    const error = new Error(data?.error || `Request failed (${response.status})`);
+    error.status = response.status;
+    error.data = data;
+    throw error;
+  }
+  return { response, data };
+}
+
+const authGate = $('#auth-gate');
+const authTitle = $('#auth-title');
+const authMessage = $('#auth-message');
+const authRetry = $('#auth-retry');
+
+function showAccessError(title, message, retry = false) {
+  authGate.hidden = false;
+  authTitle.textContent = title;
+  authMessage.textContent = message;
+  authRetry.hidden = !retry;
+}
+
+async function verifyAccess() {
+  try {
+    const { data } = await api('me');
+
+    if (!data?.ok || !data.user) {
+      showAccessError(
+        'Access denied.',
+        'Your Google account is authenticated, but it is not authorised for Damaroo Arts.'
+      );
+      return false;
+    }
+
+    state.user = data.user;
+    $('#user-chip').hidden = false;
+    $('#user-name').textContent = data.user.name || data.user.email;
+    $('#user-role').textContent = data.user.role.replace('_', ' ');
+    authGate.hidden = true;
+    return true;
+  } catch (error) {
+    showAccessError(
+      error.status === 403 ? 'Account disabled.' : 'Unable to verify access.',
+      error.status === 403
+        ? 'This Damaroo Arts account has been disabled.'
+        : 'The application could not verify your D1 authorisation.',
+      true
+    );
+    return false;
+  }
+}
+
+authRetry.addEventListener('click', () => location.reload());
+
 /* ---------- tab indicator ---------- */
 function moveInk() {
   const t = tabs.find(x => x.dataset.tab === cur); if (!t) return;
@@ -96,13 +160,125 @@ const wbmDetail = $('#wbm-detail');
 const openWbm = $('#open-wbm');
 const backProjects = $('#back-projects');
 
-function openProject() {
+async function openProject() {
   projectsHome.hidden = true;
   wbmDetail.hidden = false;
   wbmDetail.scrollTop = 0;
   wbmDetail.classList.remove('detail-play');
   void wbmDetail.offsetWidth;
   wbmDetail.classList.add('detail-play');
+  await loadProject();
+}
+
+async function loadProject() {
+  try {
+    const projectResult = await api('projects/we-before-me');
+    state.project = projectResult.data.project;
+    await Promise.all([loadScript(), loadComments()]);
+  } catch (error) {
+    setScriptMessage(
+      'Project unavailable.',
+      error.data?.error || 'The project could not be loaded.'
+    );
+  }
+}
+
+async function loadScript() {
+  const empty = $('#script-empty');
+  const frame = $('#script-frame');
+
+  try {
+    empty.hidden = false;
+    $('h4', empty).textContent = 'Loading screenplay.';
+    $('p', empty).textContent = 'Fetching the latest authorised screenplay...';
+
+    const { response } = await api('projects/we-before-me/script');
+    const version = response.headers.get('X-Script-Version');
+
+    $('#script-version-label').textContent =
+      version ? `· V${String(version).padStart(3, '0')}` : '';
+
+    /*
+     * The PDF is served by the protected Pages Function.
+     * No direct R2 URL is exposed to the browser.
+     */
+    frame.src = '/api/projects/we-before-me/script';
+    frame.hidden = false;
+    empty.hidden = true;
+  } catch (error) {
+    frame.hidden = true;
+    setScriptMessage(
+      'Screenplay unavailable.',
+      error.data?.error || 'The latest screenplay could not be loaded.'
+    );
+  }
+}
+
+async function loadComments() {
+  const list = $('#discussion-list');
+  const empty = $('#discussion-empty');
+
+  try {
+    const { data } = await api('projects/we-before-me/comments');
+    state.comments = data.comments || [];
+    $('.comment-count').textContent = state.comments.length;
+
+    if (!state.comments.length) {
+      list.innerHTML = '';
+      empty.hidden = false;
+      return;
+    }
+
+    empty.hidden = true;
+    list.innerHTML = state.comments.map(comment => `
+      <article class="comment-card">
+        <div class="comment-meta">
+          <strong>${escapeHtml(comment.author_name || comment.author_email || 'User')}</strong>
+          <span>${formatDate(comment.created_at)}</span>
+        </div>
+        <p>${escapeHtml(comment.body)}</p>
+        <div class="comment-footer">
+          <span>PAGE ${getCommentPage(comment)}</span>
+          ${Number(comment.resolved) === 1 ? '<span class="resolved-label">RESOLVED</span>' : ''}
+        </div>
+      </article>
+    `).join('');
+  } catch {
+    state.comments = [];
+    list.innerHTML = '';
+    empty.hidden = false;
+  }
+}
+
+function getCommentPage(comment) {
+  try {
+    return JSON.parse(comment.anchor_value || '{}').page || '—';
+  } catch {
+    return '—';
+  }
+}
+
+function setScriptMessage(title, message) {
+  const empty = $('#script-empty');
+  empty.hidden = false;
+  $('h4', empty).textContent = title;
+  $('p', empty).textContent = message;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function formatDate(value) {
+  if (!value) return '';
+  const d = new Date(value.replace(' ', 'T') + 'Z');
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 function closeProject() {
@@ -115,5 +291,12 @@ openWbm.addEventListener('click', openProject);
 backProjects.addEventListener('click', closeProject);
 
 /* ---------- boot ---------- */
-const start = location.hash.slice(1);
-show(TABS.includes(start) ? start : 'home');
+async function boot() {
+  const allowed = await verifyAccess();
+  if (!allowed) return;
+
+  const start = location.hash.slice(1);
+  show(TABS.includes(start) ? start : 'home');
+}
+
+boot();
