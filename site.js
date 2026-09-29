@@ -56,6 +56,9 @@ const authRetry = $('#auth-retry');
 
 function showAccessError(title, message, retry = false, detail = '') {
   authGate.hidden = false;
+  authGate.removeAttribute('aria-hidden');
+  authGate.style.display = 'grid';
+  document.body.classList.remove('app-ready');
   authTitle.textContent = title;
   authMessage.textContent = message;
   authRetry.hidden = !retry;
@@ -77,6 +80,10 @@ async function verifyAccess() {
     $('#upload-box').hidden = !['admin', 'script_editor'].includes(data.user.role);
     $('.admin-only').hidden = data.user.role !== 'admin';
     authGate.hidden = true;
+    authGate.setAttribute('aria-hidden', 'true');
+    authGate.style.display = 'none';
+    document.body.classList.add('app-ready');
+    window.DamarooArts.authenticated = true;
     return true;
   } catch (error) {
     if (error.status === 403 && error.data?.reason === 'not_authorized') {
@@ -97,6 +104,14 @@ async function verifyAccess() {
 }
 
 authRetry.addEventListener('click', () => location.reload());
+
+// Expose a small diagnostic surface for the browser console.
+// ES modules do not place top-level functions on window, so typeof verifyAccess
+// would otherwise be "undefined" even when this file is loaded correctly.
+window.DamarooArts = window.DamarooArts || {};
+window.DamarooArts.verifyAccess = verifyAccess;
+window.DamarooArts.boot = boot;
+window.DamarooArts.version = '2026-09-29.4';
 
 function availableTabs() {
   return TABS.filter(t => {
@@ -445,7 +460,7 @@ $$('.workspace-tab').forEach(button => button.addEventListener('click', () => {
   if (target === 'admin' && state.user?.role === 'admin') loadAdmin();
 }));
 
-async function loadAdmin() {
+async async function loadAdmin() {
   if (state.user?.role !== 'admin') return;
   const jobs = [loadAdminUsers(), loadAdminVersions(), loadAdminLogs()];
   const results = await Promise.allSettled(jobs);
@@ -508,13 +523,21 @@ openWbm.addEventListener('click', openProject); backProjects.addEventListener('c
 
 authGate.hidden = false;
 async function boot() {
+  window.DamarooArts.bootStartedAt = new Date().toISOString();
   try {
     const allowed = await verifyAccess();
-    if (!allowed) return;
+    if (!allowed) {
+      window.DamarooArts.bootResult = 'denied';
+      return;
+    }
     const start = location.hash.slice(1);
     show(availableTabs().includes(start) ? start : 'home');
+    window.DamarooArts.bootResult = 'ready';
   } catch (error) {
+    window.DamarooArts.bootResult = 'error';
+    console.error('[Damaroo Arts] startup error:', error);
     showAccessError('Application error.', 'The application failed during startup.', true, error?.message || 'Unknown startup error');
   }
 }
+window.DamarooArts.boot = boot;
 boot();
