@@ -1400,6 +1400,115 @@ export async function onRequest(context) {
 
     /*
      * ---------------------------------------------------------
+     * GET /api/admin/logs
+     * Admin-only update history.
+     * ---------------------------------------------------------
+     */
+
+    if (path === "admin/logs" && method === "GET") {
+      const admin = await requireUser(request, env);
+
+      if (!isAdmin(admin)) {
+        return json({ ok: false, error: "Admin access required" }, 403);
+      }
+
+      const result = await env.DB.prepare(`
+        SELECT
+          l.id,
+          l.action,
+          l.description,
+          l.metadata,
+          l.created_at,
+          l.script_version_id,
+          l.project_id,
+          u.name AS user_name,
+          u.email AS user_email
+        FROM update_logs l
+        JOIN users u ON u.id = l.user_id
+        WHERE l.project_id = 1
+        ORDER BY l.created_at DESC, l.id DESC
+        LIMIT 250
+      `).all();
+
+      return json({ ok: true, logs: result.results || [] });
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * GET /api/admin/versions
+     * Admin-only screenplay version metadata.
+     * ---------------------------------------------------------
+     */
+
+    if (path === "admin/versions" && method === "GET") {
+      const admin = await requireUser(request, env);
+
+      if (!isAdmin(admin)) {
+        return json({ ok: false, error: "Admin access required" }, 403);
+      }
+
+      const result = await env.DB.prepare(`
+        SELECT
+          sv.id,
+          sv.version_number,
+          sv.file_name,
+          sv.notes,
+          sv.created_at,
+          u.name AS uploaded_by_name,
+          u.email AS uploaded_by_email
+        FROM script_versions sv
+        JOIN users u ON u.id = sv.uploaded_by
+        WHERE sv.project_id = 1
+        ORDER BY sv.version_number DESC
+      `).all();
+
+      return json({ ok: true, versions: result.results || [] });
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * GET /api/admin/versions/:id/script
+     * Admin-only access to an older private screenplay version.
+     * ---------------------------------------------------------
+     */
+
+    const adminVersionMatch = path.match(/^admin\/versions\/(\d+)\/script$/);
+
+    if (adminVersionMatch && method === "GET") {
+      const admin = await requireUser(request, env);
+
+      if (!isAdmin(admin)) {
+        return json({ ok: false, error: "Admin access required" }, 403);
+      }
+
+      const versionId = Number(adminVersionMatch[1]);
+      const version = await env.DB.prepare(`
+        SELECT id, version_number, file_key, file_name
+        FROM script_versions
+        WHERE id = ? AND project_id = 1
+        LIMIT 1
+      `).bind(versionId).first();
+
+      if (!version) {
+        return json({ ok: false, error: "Version not found" }, 404);
+      }
+
+      const object = await env.FILES.get(version.file_key);
+      if (!object) {
+        return json({ ok: false, error: "Screenplay file not found" }, 404);
+      }
+
+      const headers = new Headers();
+      headers.set("Content-Type", object.httpMetadata?.contentType || "application/pdf");
+      headers.set("Content-Disposition", `inline; filename="${version.file_name.replace(/"/g, "")}"`);
+      headers.set("Cache-Control", "private, no-store");
+      headers.set("X-Script-Version", String(version.version_number));
+
+      return new Response(object.body, { status: 200, headers });
+    }
+
+    /*
+     * ---------------------------------------------------------
      * Intentionally no public routes for:
      *
      * /api/projects/we-before-me/versions

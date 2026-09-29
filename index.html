@@ -30,154 +30,83 @@
     <button class="tab" role="tab" id="tab-projects" data-tab="projects" aria-selected="false" aria-controls="view-projects" tabindex="-1">Projects</button>
   </nav>
   <div class="user-chip" id="user-chip" hidden>
-    <span id="user-name"></span>
-    <span id="user-role"></span>
+    <span id="user-name"></span><span id="user-role"></span>
   </div>
 </header>
 
 <div class="stage-wrap">
+<section class="view active" id="view-home" role="tabpanel" aria-labelledby="tab-home">
+  <div class="hero" id="hero">
+    <div class="beam"></div><canvas id="dust"></canvas><div class="glow"></div><div class="vignette"></div><div class="grain"></div>
+    <div class="bar bar-top"></div><div class="bar bar-bot"></div><div class="frame"><i></i><i></i><i></i><i></i></div>
+    <div class="center"><h1 class="title"><span class="sr">Damaroo Arts</span><span class="line l1" data-t="DAMAROO" aria-hidden="true"></span><span class="line l2" data-t="ARTS" aria-hidden="true"></span></h1><p class="soon"><span class="rule"></span><span class="soon-text">Coming soon</span><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="rule"></span></p></div>
+    <div class="tc" aria-hidden="true"><span class="rec"></span><span id="tc">00:00:00:00</span></div>
+  </div>
+</section>
 
-  <!-- HOME -->
-  <section class="view active" id="view-home" role="tabpanel" aria-labelledby="tab-home">
-    <div class="hero" id="hero">
-      <div class="beam"></div>
-      <canvas id="dust"></canvas>
-      <div class="glow"></div>
-      <div class="vignette"></div>
-      <div class="grain"></div>
-      <div class="bar bar-top"></div><div class="bar bar-bot"></div>
-      <div class="frame"><i></i><i></i><i></i><i></i></div>
+<section class="view" id="view-tool" role="tabpanel" aria-labelledby="tab-tool">
+  <div class="tool-load" id="tool-load"><span></span></div><iframe id="sb-frame" src="about:blank" title="Storyboard Simulator"></iframe>
+</section>
 
-      <div class="center">
-        <h1 class="title"><span class="sr">Damaroo Arts</span>
-          <span class="line l1" data-t="DAMAROO" aria-hidden="true"></span>
-          <span class="line l2" data-t="ARTS" aria-hidden="true"></span>
-        </h1>
-        <p class="soon"><span class="rule"></span><span class="soon-text">Coming soon</span><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="rule"></span></p>
-      </div>
+<section class="view" id="view-projects" role="tabpanel" aria-labelledby="tab-projects">
+  <div class="proj" id="projects-home">
+    <div class="proj-head"><div><p class="proj-kicker">Projects</p><h2>In production.</h2><p>Private production workspaces.</p></div><span class="proj-count">01 ACTIVE PROJECT</span></div>
+    <div class="project-card-wrap"><button class="project-card" id="open-wbm" type="button"><div class="project-card-main"><span class="project-status">PRE-PRODUCTION</span><h3>We Before Me</h3><p>Script, discussion, versioning and production administration.</p><span class="project-open">Open project <b>↗</b></span></div><div class="project-card-side"><div class="project-mark">W<span>·</span>BM</div><div class="project-meta"><span>Script</span><span>Discussion</span><span>Admin</span></div></div></button></div>
+    <div class="proj-footnote"><span class="foot-rule"></span><span>DMAROO ARTS · PRODUCTION</span></div>
+  </div>
 
-      <div class="tc" aria-hidden="true"><span class="rec"></span><span id="tc">00:00:00:00</span></div>
+  <div class="project-detail" id="wbm-detail" hidden>
+    <div class="detail-top"><button class="back-projects" id="back-projects" type="button">← Projects</button><span class="detail-code">PROJECT 001 · PRIVATE</span></div>
+    <div class="detail-heading"><div><span class="project-status">PRE-PRODUCTION</span><h2>We Before Me</h2><p>Production workspace for the screenplay and internal discussion.</p></div><div class="detail-lock"><span class="lock-dot"></span>AUTHORISED USERS ONLY</div></div>
+
+    <div class="workspace-tabs" role="tablist">
+      <button class="workspace-tab active" data-workspace="script" type="button">Screenplay</button>
+      <button class="workspace-tab" data-workspace="discussion" type="button">Discussion <span id="workspace-comment-count">0</span></button>
+      <button class="workspace-tab admin-only" data-workspace="admin" type="button" hidden>Administration</button>
     </div>
-  </section>
 
-  <!-- STORYBOARD TOOL -->
-  <section class="view" id="view-tool" role="tabpanel" aria-labelledby="tab-tool">
-    <div class="tool-load" id="tool-load"><span></span></div>
-    <iframe id="sb-frame" src="about:blank" title="Storyboard Simulator"></iframe>
-  </section>
-
-  <!-- PROJECTS -->
-  <section class="view" id="view-projects" role="tabpanel" aria-labelledby="tab-projects">
-    <div class="proj" id="projects-home">
-      <div class="proj-head">
-        <div>
-          <p class="proj-kicker">Projects</p>
-          <h2>In production.</h2>
-          <p>Everything currently in production.</p>
+    <div class="workspace-view active" id="workspace-script">
+      <div class="script-toolbar">
+        <div><span class="panel-kicker">01 · SCRIPT</span><h3>Latest screenplay <span id="script-version-label"></span></h3></div>
+        <div class="script-actions"><span class="private-badge">PRIVATE · LATEST ONLY</span><button class="secondary-btn editor-only" id="open-upload" hidden>Upload new version</button></div>
+      </div>
+      <div class="script-reader" id="script-reader">
+        <div class="script-empty" id="script-empty"><div class="script-icon">S</div><h4>Loading screenplay.</h4><p>Fetching the latest authorised screenplay.</p><span class="reader-note">PRIVATE DOCUMENT · LATEST VERSION ONLY</span></div>
+        <div class="pdf-viewer" id="pdf-viewer" hidden>
+          <div class="pdf-toolbar"><button type="button" id="pdf-prev">←</button><span>PAGE <b id="pdf-page">1</b> / <b id="pdf-pages">1</b></span><button type="button" id="pdf-next">→</button><span class="pdf-sep"></span><button type="button" id="pdf-zoom-out">−</button><span id="pdf-zoom-label">100%</span><button type="button" id="pdf-zoom-in">+</button><span class="pdf-sep"></span><button type="button" id="pdf-fit">FIT</button></div>
+          <div class="pdf-stage" id="pdf-stage"><div class="pdf-page-wrap" id="pdf-page-wrap"><canvas id="pdf-canvas"></canvas><div class="textLayer" id="pdf-text-layer"></div><div class="pdf-marker-layer" id="pdf-marker-layer"></div></div></div>
+          <div class="pdf-hint">SELECT TEXT OR CLICK A LOCATION · THEN ADD A COMMENT</div>
         </div>
-        <span class="proj-count">01 ACTIVE PROJECT</span>
-      </div>
-
-      <div class="project-card-wrap">
-        <button class="project-card" id="open-wbm" type="button" aria-label="Open We Before Me project">
-          <div class="project-card-main">
-            <span class="project-status">PRE-PRODUCTION</span>
-            <h3>We Before Me</h3>
-            <p>Private production workspace for the film.</p>
-            <span class="project-open">Open project <b>↗</b></span>
-          </div>
-          <div class="project-card-side">
-            <div class="project-mark">W<span>·</span>BM</div>
-            <div class="project-meta">
-              <span>Script</span>
-              <span>Discussion</span>
-              <span>Update log</span>
-            </div>
-          </div>
-        </button>
-      </div>
-
-      <div class="proj-footnote">
-        <span class="foot-rule"></span>
-        <span>DMAROO ARTS · PRODUCTION</span>
       </div>
     </div>
 
-    <div class="project-detail" id="wbm-detail" hidden>
-      <div class="detail-top">
-        <button class="back-projects" id="back-projects" type="button">← Projects</button>
-        <span class="detail-code">PROJECT 001 · PRIVATE</span>
-      </div>
-
-      <div class="detail-heading">
-        <div>
-          <span class="project-status">PRE-PRODUCTION</span>
-          <h2>We Before Me</h2>
-          <p>Production workspace. Script, discussion and update history.</p>
-        </div>
-        <div class="detail-lock">
-          <span class="lock-dot"></span>
-          AUTHORISED USERS ONLY
-        </div>
-      </div>
-
-      <div class="detail-grid">
-        <section class="script-panel">
-          <div class="panel-head">
-            <div>
-              <span class="panel-kicker">01 · SCRIPT</span>
-              <h3>Screenplay</h3>
-            </div>
-            <span class="private-badge">PRIVATE</span>
-          </div>
-
-          <div class="script-reader" id="script-reader">
-            <div class="script-empty" id="script-empty">
-              <div class="script-icon">S</div>
-              <h4>Loading screenplay.</h4>
-              <p>Fetching the latest authorised screenplay from the private production store.</p>
-              <span class="reader-note">PRIVATE DOCUMENT · LATEST VERSION ONLY</span>
-            </div>
-            <iframe id="script-frame" title="Latest screenplay" hidden></iframe>
-          </div>
-        </section>
-
-        <aside class="project-sidebar">
-          <section class="side-panel">
-            <div class="panel-head compact">
-              <div>
-                <span class="panel-kicker">02 · DISCUSSION</span>
-                <h3>Production notes</h3>
-              </div>
-              <span class="comment-count">0</span>
-            </div>
-            <div class="discussion-list" id="discussion-list"></div>
-            <div class="discussion-empty" id="discussion-empty">
-              <span class="discussion-mark">+</span>
-              <p>Comments anchored to the script will appear here.</p>
-              <span>AUTHOR · COMMENT · LOCATION · TIME</span>
-            </div>
-          </section>
-
-          <section class="side-panel">
-            <div class="panel-head compact">
-              <div>
-                <span class="panel-kicker">03 · UPDATE LOG</span>
-                <h3>Script history</h3>
-              </div>
-            </div>
-            <div class="log-empty">
-              <span>No script updates yet.</span>
-              <small>Previous screenplay versions remain private to the production backend.</small>
-            </div>
-          </section>
-        </aside>
+    <div class="workspace-view" id="workspace-discussion">
+      <div class="discussion-layout">
+        <section class="side-panel discussion-panel"><div class="panel-head compact"><div><span class="panel-kicker">02 · DISCUSSION</span><h3>Production notes</h3></div><span class="comment-count">0</span></div><div class="discussion-list" id="discussion-list"></div><div class="discussion-empty" id="discussion-empty"><span class="discussion-mark">+</span><p>Comments anchored to the screenplay will appear here.</p><span>AUTHOR · COMMENT · LOCATION · TIME</span></div></section>
+        <aside class="discussion-guide"><span class="panel-kicker">WORKFLOW</span><h3>Script discussion</h3><p>Select screenplay text or click a point on the page to attach a note. Every comment is stored against the current screenplay version.</p><div class="guide-item"><b>01</b><span>Locate a line or scene.</span></div><div class="guide-item"><b>02</b><span>Add the production note.</span></div><div class="guide-item"><b>03</b><span>Editor/admin can resolve it.</span></div></aside>
       </div>
     </div>
-  </section>
 
-  <div class="wipe" aria-hidden="true"></div>
+    <div class="workspace-view" id="workspace-admin" hidden>
+      <div class="admin-grid">
+        <section class="admin-panel"><div class="panel-head compact"><div><span class="panel-kicker">03 · USERS</span><h3>Authorised accounts</h3></div><button class="secondary-btn" id="add-user-btn">Add user</button></div><div id="admin-users" class="admin-list"></div></section>
+        <section class="admin-panel"><div class="panel-head compact"><div><span class="panel-kicker">04 · VERSIONS</span><h3>Screenplay archive</h3></div><span class="private-badge">ADMIN ONLY</span></div><div id="admin-versions" class="admin-list"></div></section>
+        <section class="admin-panel admin-log-panel"><div class="panel-head compact"><div><span class="panel-kicker">05 · AUDIT</span><h3>Update log</h3></div></div><div id="admin-logs" class="admin-list"></div></section>
+      </div>
+    </div>
+  </div>
+</section>
+<div class="wipe" aria-hidden="true"></div>
 </div>
+
+<!-- Comment composer -->
+<div class="modal" id="comment-modal" hidden><div class="modal-card"><div class="modal-head"><div><span class="panel-kicker">SCREENPLAY COMMENT</span><h3>Add production note</h3></div><button class="modal-close" data-close-modal="comment-modal">×</button></div><div id="comment-context" class="comment-context"></div><textarea id="comment-body" rows="5" placeholder="Write the note for the writer/director..." maxlength="4000"></textarea><div class="modal-actions"><button class="secondary-btn" data-close-modal="comment-modal">Cancel</button><button class="primary-btn" id="save-comment">Add comment</button></div></div></div>
+
+<!-- Upload modal -->
+<div class="modal" id="upload-modal" hidden><div class="modal-card"><div class="modal-head"><div><span class="panel-kicker">SCRIPT EDITOR</span><h3>Upload screenplay</h3></div><button class="modal-close" data-close-modal="upload-modal">×</button></div><form id="upload-form"><label class="file-drop"><input type="file" id="script-file" accept="application/pdf" required><span id="file-name">Choose screenplay PDF</span><small>PDF only · creates the next version automatically</small></label><label class="field-label">Version note<textarea id="upload-notes" rows="3" maxlength="1000" placeholder="What changed in this version?"></textarea></label><div class="modal-actions"><button type="button" class="secondary-btn" data-close-modal="upload-modal">Cancel</button><button type="submit" class="primary-btn" id="upload-submit">Upload version</button></div><p class="form-status" id="upload-status"></p></form></div></div>
+
+<!-- Admin add/edit user modal -->
+<div class="modal" id="user-modal" hidden><div class="modal-card"><div class="modal-head"><div><span class="panel-kicker">ADMINISTRATION</span><h3 id="user-modal-title">Add authorised user</h3></div><button class="modal-close" data-close-modal="user-modal">×</button></div><form id="user-form"><input type="hidden" id="user-edit-id"><label class="field-label">Google email<input id="user-email-input" type="email" required placeholder="name@gmail.com"></label><label class="field-label">Name<input id="user-name-input" type="text" placeholder="Display name"></label><label class="field-label">Role<select id="user-role-input"><option value="reader">Reader</option><option value="script_editor">Script Editor</option><option value="admin">Admin</option></select></label><label class="toggle-line"><input id="user-active-input" type="checkbox" checked><span>Account active</span></label><div class="modal-actions"><button type="button" class="secondary-btn" data-close-modal="user-modal">Cancel</button><button type="submit" class="primary-btn">Save user</button></div><p class="form-status" id="user-status"></p></form></div></div>
 
 <script type="module" src="site.js"></script>
 </body>
