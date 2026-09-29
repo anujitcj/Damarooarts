@@ -168,9 +168,10 @@ function makeCam(shot, models, W, H, sel){
   const line = (a, b) => { // near-plane clipped segment
     let da = depth(a), db = depth(b);
     if (da < .05 && db < .05) return null;
-    if (da < .05) a = add(a, mul(sub(b, a), (.05 - da) / (db - da)));
-    if (db < .05) b = add(b, mul(sub(a, b), (.05 - db) / (da - db)));
-    return [p(a), p(b)];
+    const na = da < .1 ? add(a, mul(sub(b, a), (.1 - da) / (db - da))) : a;
+    const nb = db < .1 ? add(b, mul(sub(a, b), (.1 - db) / (da - db))) : b;
+    const pa = p(na), pb = p(nb);
+    return pa && pb ? [pa, pb] : null;
   };
   return { pos, p, line, depth };
 }
