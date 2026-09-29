@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Damaroo — Storyboard Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ──────────────────── TOPBAR ──────────────────── -->
+<header class="topbar">
+  <div class="topbar-left">
+    <span class="brand">DAMAROO</span>
+    <span class="brand-sub">Storyboard Simulator</span>
+  </div>
+  <div class="topbar-center" id="shot-label">SHOT 001</div>
+  <div class="topbar-right">
+    <button class="btn-ghost" id="btn-toggle-grid" title="Toggle composition grid">Grid</button>
+    <button class="btn-ghost" id="btn-export-png" title="Export current frame as PNG">Export PNG</button>
+    <button class="btn-ghost" id="btn-export-sheet" title="Export all shots as sheet">Export Sheet</button>
+  </div>
+</header>
+
+<!-- ──────────────────── APP BODY ──────────────────── -->
+<div class="app-body">
+
+  <!-- LEFT PANEL -->
+  <aside class="panel-left">
+
+    <!-- CAMERA -->
+    <section class="ctrl-section">
+      <div class="ctrl-section-title">Camera</div>
+
+      <div class="ctrl-group">
+        <div class="ctrl-label">Horizontal</div>
+        <div class="btn-row" id="ctrl-horizontal"></div>
+      </div>
+
+      <div class="ctrl-group">
+        <div class="ctrl-label">Vertical</div>
+        <div class="btn-row" id="ctrl-vertical"></div>
+      </div>
+
+      <div class="ctrl-group">
+        <div class="ctrl-label">Lens</div>
+        <div class="btn-row" id="ctrl-lens"></div>
+      </div>
+
+      <div class="ctrl-group">
+        <div class="ctrl-label">Shot Scale</div>
+        <div class="btn-row" id="ctrl-shotscale"></div>
+      </div>
+
+      <!-- Camera diagram -->
+      <div class="cam-diagram">
+        <canvas id="cam-diagram-canvas" width="200" height="100"></canvas>
+      </div>
+    </section>
+
+    <!-- OBJECT CONTROLS (shown when object selected) -->
+    <section class="ctrl-section" id="obj-controls" style="display:none;">
+      <div class="ctrl-section-title" id="obj-ctrl-title">Object</div>
+
+      <div class="ctrl-group">
+        <div class="ctrl-label">Position</div>
+        <div class="grid-picker" id="ctrl-position">
+          <button data-pos="top-left">TL</button>
+          <button data-pos="top-middle">TM</button>
+          <button data-pos="top-right">TR</button>
+          <button data-pos="middle-left">ML</button>
+          <button data-pos="center">C</button>
+          <button data-pos="middle-right">MR</button>
+          <button data-pos="bottom-left">BL</button>
+          <button data-pos="bottom-middle">BM</button>
+          <button data-pos="bottom-right">BR</button>
+        </div>
+      </div>
+
+      <div class="ctrl-group">
+        <div class="ctrl-label">Depth</div>
+        <div class="btn-row" id="ctrl-depth"></div>
+      </div>
+
+      <div class="ctrl-group">
+        <div class="ctrl-label">Scale</div>
+        <div class="btn-row" id="ctrl-scale"></div>
+      </div>
+
+      <div class="ctrl-group">
+        <div class="ctrl-label">Orientation</div>
+        <div class="btn-row flex-wrap" id="ctrl-orientation"></div>
+      </div>
+
+      <!-- Character-only controls -->
+      <div id="char-controls" style="display:none;">
+        <div class="ctrl-group">
+          <div class="ctrl-label">Pose</div>
+          <div class="btn-row flex-wrap" id="ctrl-pose"></div>
+        </div>
+        <div class="ctrl-group">
+          <div class="ctrl-label">Arms</div>
+          <div class="btn-row flex-wrap" id="ctrl-arms"></div>
+        </div>
+        <div class="ctrl-group">
+          <div class="ctrl-label">Expression</div>
+          <div class="btn-row" id="ctrl-expression"></div>
+        </div>
+      </div>
+
+    </section>
+
+  </aside>
+
+  <!-- CENTER CANVAS -->
+  <main class="panel-center">
+    <div class="canvas-wrap">
+      <canvas id="storyboard-canvas"></canvas>
+    </div>
+
+    <!-- SHOT ACTIONS -->
+    <div class="shot-actions">
+      <button class="btn-primary" id="btn-save-shot">Save Shot</button>
+      <button class="btn-secondary" id="btn-duplicate-shot">Duplicate Shot</button>
+    </div>
+
+    <!-- SHOT TIMELINE -->
+    <div class="timeline-wrap">
+      <div class="timeline-label">Timeline</div>
+      <div class="timeline-strip" id="timeline-strip"></div>
+    </div>
+  </main>
+
+  <!-- RIGHT PANEL: SCENE HIERARCHY -->
+  <aside class="panel-right">
+    <div class="ctrl-section-title" style="padding:14px 16px 6px;">Scene Objects</div>
+
+    <div class="obj-list" id="obj-list"></div>
+
+    <div class="add-obj-wrap">
+      <button class="btn-add-obj" id="btn-add-obj">+ Add Object</button>
+      <div class="obj-picker" id="obj-picker" style="display:none;"></div>
+    </div>
+  </aside>
+
+</div>
+
+<!-- html2canvas for PNG export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="app.js" type="module"></script>
+</body>
+</html>
