@@ -382,7 +382,7 @@ $('#btn-export-sheet').addEventListener('click', () => {
 
 /* ---------- boot ---------- */
 (async function init() {
-  try { CFG = await (await fetch('config.json')).json(); }
+  try { CFG = await (await fetch(new URL('./config.json', import.meta.url), { cache: 'no-store' })).json(); }
   catch (err) { document.body.insertAdjacentHTML('beforeend', '<div class="fatal">Could not load config.json. Open this page through GitHub Pages or a local web server (not by double-clicking the file).</div>'); return; }
   OBJ = Object.fromEntries(CFG.objects.map(o => [o.id, o]));
   buildCam(); renderTl(); renderList(); go(0);

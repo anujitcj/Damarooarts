@@ -170,15 +170,33 @@ export async function onRequest(context) {
      */
 
     if (path === "me" && method === "GET") {
+      const accessEmail = getAccessEmail(request);
       const user = await getCurrentUser(request, env);
+
+      if (!accessEmail) {
+        return json(
+          {
+            ok: false,
+            authenticated: false,
+            authorized: false,
+            reason: "access_session_missing",
+            error: "Cloudflare Access session is not available to the application.",
+          },
+          401
+        );
+      }
 
       if (!user) {
         return json(
           {
             ok: false,
-            authenticated: false,
+            authenticated: true,
+            authorized: false,
+            reason: "not_authorized",
+            email: accessEmail,
+            error: "Google account is authenticated but is not authorised in D1.",
           },
-          401
+          403
         );
       }
 
@@ -187,17 +205,15 @@ export async function onRequest(context) {
           {
             ok: false,
             authenticated: true,
-            authorized: false,
+            authorized: true,
+            reason: "account_disabled",
             error: "Account disabled",
           },
           403
         );
       }
 
-      return json({
-        ok: true,
-        user,
-      });
+      return json({ ok: true, user });
     }
 
     /*
@@ -1400,111 +1416,102 @@ export async function onRequest(context) {
 
     /*
      * ---------------------------------------------------------
-     * GET /api/admin/logs
-     * Admin-only update history.
+     * GET /api/admin/projects/we-before-me/versions
+     * Admin-only screenplay archive metadata.
      * ---------------------------------------------------------
      */
 
-    if (path === "admin/logs" && method === "GET") {
+    if (
+      path === `admin/projects/${PROJECT_SLUG}/versions` &&
+      method === "GET"
+    ) {
       const admin = await requireUser(request, env);
-
       if (!isAdmin(admin)) {
         return json({ ok: false, error: "Admin access required" }, 403);
       }
 
-      const result = await env.DB.prepare(`
-        SELECT
-          l.id,
-          l.action,
-          l.description,
-          l.metadata,
-          l.created_at,
-          l.script_version_id,
-          l.project_id,
-          u.name AS user_name,
-          u.email AS user_email
-        FROM update_logs l
-        JOIN users u ON u.id = l.user_id
-        WHERE l.project_id = 1
-        ORDER BY l.created_at DESC, l.id DESC
-        LIMIT 250
-      `).all();
-
-      return json({ ok: true, logs: result.results || [] });
-    }
-
-    /*
-     * ---------------------------------------------------------
-     * GET /api/admin/versions
-     * Admin-only screenplay version metadata.
-     * ---------------------------------------------------------
-     */
-
-    if (path === "admin/versions" && method === "GET") {
-      const admin = await requireUser(request, env);
-
-      if (!isAdmin(admin)) {
-        return json({ ok: false, error: "Admin access required" }, 403);
-      }
+      const project = await getProject(env);
+      if (!project) return json({ ok: false, error: "Project not found" }, 404);
 
       const result = await env.DB.prepare(`
         SELECT
-          sv.id,
-          sv.version_number,
-          sv.file_name,
-          sv.notes,
-          sv.created_at,
-          u.name AS uploaded_by_name,
-          u.email AS uploaded_by_email
+          sv.id, sv.version_number, sv.file_name, sv.notes, sv.created_at,
+          u.name AS uploaded_by_name, u.email AS uploaded_by_email
         FROM script_versions sv
-        JOIN users u ON u.id = sv.uploaded_by
-        WHERE sv.project_id = 1
+        LEFT JOIN users u ON u.id = sv.uploaded_by
+        WHERE sv.project_id = ?
         ORDER BY sv.version_number DESC
-      `).all();
+      `).bind(project.id).all();
 
       return json({ ok: true, versions: result.results || [] });
     }
 
     /*
      * ---------------------------------------------------------
-     * GET /api/admin/versions/:id/script
-     * Admin-only access to an older private screenplay version.
+     * GET /api/admin/projects/we-before-me/versions/:id
+     * Admin-only access to an archived PDF.
      * ---------------------------------------------------------
      */
 
-    const adminVersionMatch = path.match(/^admin\/versions\/(\d+)\/script$/);
+    const adminVersionMatch = path.match(
+      new RegExp(`^admin/projects/${PROJECT_SLUG}/versions/(\\d+)$`)
+    );
 
     if (adminVersionMatch && method === "GET") {
       const admin = await requireUser(request, env);
-
-      if (!isAdmin(admin)) {
-        return json({ ok: false, error: "Admin access required" }, 403);
-      }
+      if (!isAdmin(admin)) return json({ ok: false, error: "Admin access required" }, 403);
 
       const versionId = Number(adminVersionMatch[1]);
       const version = await env.DB.prepare(`
         SELECT id, version_number, file_key, file_name
         FROM script_versions
-        WHERE id = ? AND project_id = 1
+        WHERE id = ?
         LIMIT 1
       `).bind(versionId).first();
 
-      if (!version) {
-        return json({ ok: false, error: "Version not found" }, 404);
-      }
-
+      if (!version) return json({ ok: false, error: "Version not found" }, 404);
       const object = await env.FILES.get(version.file_key);
-      if (!object) {
-        return json({ ok: false, error: "Screenplay file not found" }, 404);
-      }
+      if (!object) return json({ ok: false, error: "Archived screenplay file not found" }, 404);
 
       const headers = new Headers();
       headers.set("Content-Type", object.httpMetadata?.contentType || "application/pdf");
       headers.set("Content-Disposition", `inline; filename="${version.file_name.replace(/"/g, "")}"`);
       headers.set("Cache-Control", "private, no-store");
       headers.set("X-Script-Version", String(version.version_number));
-
       return new Response(object.body, { status: 200, headers });
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * GET /api/admin/projects/we-before-me/logs
+     * Admin-only audit log.
+     * ---------------------------------------------------------
+     */
+
+    if (
+      path === `admin/projects/${PROJECT_SLUG}/logs` &&
+      method === "GET"
+    ) {
+      const admin = await requireUser(request, env);
+      if (!isAdmin(admin)) return json({ ok: false, error: "Admin access required" }, 403);
+
+      const project = await getProject(env);
+      if (!project) return json({ ok: false, error: "Project not found" }, 404);
+
+      const result = await env.DB.prepare(`
+        SELECT
+          l.id, l.action, l.description, l.metadata, l.created_at,
+          u.name AS user_name, u.email AS user_email,
+          sv.version_number AS script_version
+        FROM update_logs l
+        LEFT JOIN users u ON u.id = l.user_id
+        LEFT JOIN script_versions sv ON sv.id = l.script_version_id
+        WHERE l.project_id = ?
+        ORDER BY l.created_at DESC, l.id DESC
+        LIMIT 250
+      `).bind(project.id).all();
+
+      return json({ ok: true, logs: result.results || [] });
     }
 
     /*
