@@ -296,7 +296,230 @@ export async function onRequest(context) {
         headers,
       });
     }
+/*
+ * ---------------------------------------------------------
+ * POST /api/projects/we-before-me/script
+ *
+ * Upload a new screenplay PDF.
+ *
+ * Allowed:
+ *   admin
+ *   script_editor
+ *
+ * Not allowed:
+ *   reader
+ * ---------------------------------------------------------
+ */
 
+if (
+  path === `projects/${PROJECT_SLUG}/script` &&
+  method === "POST"
+) {
+  const user = await requireUser(request, env);
+
+  if (!isScriptEditor(user)) {
+    return json(
+      {
+        ok: false,
+        error:
+          "Only admin or script editors can upload the screenplay",
+      },
+      403
+    );
+  }
+
+  const project = await getProject(env);
+
+  if (!project) {
+    return json(
+      {
+        ok: false,
+        error: "Project not found",
+      },
+      404
+    );
+  }
+
+  const contentType = request.headers.get("Content-Type") || "";
+
+  if (!contentType.toLowerCase().includes("multipart/form-data")) {
+    return json(
+      {
+        ok: false,
+        error: "Upload must use multipart/form-data",
+      },
+      400
+    );
+  }
+
+  const formData = await request.formData();
+
+  const file = formData.get("file");
+  const notes = formData.get("notes");
+
+  if (!file || typeof file === "string") {
+    return json(
+      {
+        ok: false,
+        error: "PDF file is required",
+      },
+      400
+    );
+  }
+
+  const fileName = file.name || "screenplay.pdf";
+
+  if (!fileName.toLowerCase().endsWith(".pdf")) {
+    return json(
+      {
+        ok: false,
+        error: "Only PDF files are allowed",
+      },
+      400
+    );
+  }
+
+  /*
+   * Make sure the uploaded object is actually a PDF.
+   */
+  if (
+    file.type &&
+    file.type !== "application/pdf"
+  ) {
+    return json(
+      {
+        ok: false,
+        error: "Uploaded file must be a PDF",
+      },
+      400
+    );
+  }
+
+  /*
+   * Determine the next version number.
+   */
+  const latest = await env.DB.prepare(
+    `
+    SELECT MAX(version_number) AS max_version
+    FROM script_versions
+    WHERE project_id = ?
+    `
+  )
+    .bind(project.id)
+    .first();
+
+  const nextVersion =
+    Number(latest?.max_version || 0) + 1;
+
+  /*
+   * Generate a unique R2 object key.
+   */
+  const safeFileName = fileName
+    .replace(/[^a-zA-Z0-9._ -]/g, "_")
+    .replace(/\s+/g, "_");
+
+  const uniqueId = crypto.randomUUID();
+
+  const fileKey =
+    `projects/${PROJECT_SLUG}/scripts/` +
+    `v${String(nextVersion).padStart(3, "0")}/` +
+    `${uniqueId}-${safeFileName}`;
+
+  /*
+   * Store the PDF privately in R2.
+   */
+  await env.FILES.put(
+    fileKey,
+    file.stream(),
+    {
+      httpMetadata: {
+        contentType: "application/pdf",
+      },
+      customMetadata: {
+        project: PROJECT_SLUG,
+        version: String(nextVersion),
+        uploadedBy: user.email,
+      },
+    }
+  );
+
+  /*
+   * Store the version in D1.
+   */
+  const notesText =
+    typeof notes === "string"
+      ? notes.trim()
+      : "";
+
+  const inserted = await env.DB.prepare(
+    `
+    INSERT INTO script_versions (
+      project_id,
+      version_number,
+      file_key,
+      file_name,
+      uploaded_by,
+      notes
+    )
+
+    VALUES (?, ?, ?, ?, ?, ?)
+
+    RETURNING id
+    `
+  )
+    .bind(
+      project.id,
+      nextVersion,
+      fileKey,
+      fileName,
+      user.id,
+      notesText || null
+    )
+    .first();
+
+  const versionId = inserted?.id;
+
+  /*
+   * Record the upload.
+   */
+  await env.DB.prepare(
+    `
+    INSERT INTO update_logs (
+      project_id,
+      user_id,
+      action,
+      description,
+      script_version_id,
+      metadata
+    )
+
+    VALUES (?, ?, ?, ?, ?, ?)
+    `
+  )
+    .bind(
+      project.id,
+      user.id,
+      "script_uploaded",
+      `${user.name || user.email} uploaded screenplay version ${nextVersion}.`,
+      versionId,
+      JSON.stringify({
+        file_name: fileName,
+        version: nextVersion,
+      })
+    )
+    .run();
+
+  return json(
+    {
+      ok: true,
+      message: "Script uploaded successfully.",
+      version: nextVersion,
+      version_id: versionId,
+      file_name: fileName,
+    },
+    201
+  );
+}
     /*
      * ---------------------------------------------------------
      * GET comments
