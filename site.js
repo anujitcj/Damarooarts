@@ -1,5 +1,5 @@
 /* Damaroo Arts — authenticated production workspace */
-import { getPdfJs } from './pdf/pdf.js';
+const getPdfJs = () => window.DamarooPDF && window.DamarooPDF.getPdfJs ? window.DamarooPDF.getPdfJs() : Promise.reject(new Error('PDF viewer module failed to load.'));
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -111,7 +111,7 @@ authRetry.addEventListener('click', () => location.reload());
 window.DamarooArts = window.DamarooArts || {};
 window.DamarooArts.verifyAccess = verifyAccess;
 window.DamarooArts.boot = boot;
-window.DamarooArts.version = '2026-09-29.4';
+window.DamarooArts.version = '2026-09-29.5';
 
 function availableTabs() {
   return TABS.filter(t => {
@@ -460,7 +460,7 @@ $$('.workspace-tab').forEach(button => button.addEventListener('click', () => {
   if (target === 'admin' && state.user?.role === 'admin') loadAdmin();
 }));
 
-async async function loadAdmin() {
+async function loadAdmin() {
   if (state.user?.role !== 'admin') return;
   const jobs = [loadAdminUsers(), loadAdminVersions(), loadAdminLogs()];
   const results = await Promise.allSettled(jobs);
