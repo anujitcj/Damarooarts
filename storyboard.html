@@ -12,7 +12,11 @@
 <body>
 <header class="topbar">
   <div class="topbar-left"><span class="brand">DAMAROO</span><span class="brand-sub">Storyboard Simulator</span></div>
-  <div class="topbar-center" id="shot-label">SHOT 001</div>
+  <nav class="steps">
+    <button class="step-tab active" data-step="0">1 &nbsp;Camera</button>
+    <button class="step-tab" data-step="1">2 &nbsp;Objects</button>
+  </nav>
+  <div class="topbar-center" id="shot-label" contenteditable="true" spellcheck="false" title="Click to rename this shot">SHOT 001</div>
   <div class="topbar-right">
     <button class="btn-ghost" id="btn-toggle-grid" title="Rule-of-thirds grid">Grid</button>
     <button class="btn-ghost" id="btn-export-png" title="Export current frame">Export PNG</button>
@@ -22,46 +26,15 @@
 
 <div class="app-body">
   <aside class="panel-left">
-    <section class="ctrl-section">
-      <div class="ctrl-section-title">Camera</div>
-      <div class="ctrl-group"><div class="ctrl-label">Horizontal angle</div><div class="btn-row" id="ctrl-horizontal"></div></div>
-      <div class="ctrl-group"><div class="ctrl-label">Vertical angle</div><div class="btn-row" id="ctrl-vertical"></div></div>
-      <div class="ctrl-group"><div class="ctrl-label">Lens</div><div class="btn-row" id="ctrl-lens"></div></div>
-      <div class="ctrl-group"><div class="ctrl-label">Shot size</div><div class="btn-row" id="ctrl-shotscale"></div>
-        <div class="ctrl-hint">Wide = full body · Medium = waist up · Close = face. Frames the selected character.</div></div>
-      <div class="cam-diagram"><canvas id="cam-diagram-canvas" width="240" height="120"></canvas></div>
-    </section>
-
-    <section class="ctrl-section" id="obj-controls" style="display:none;">
-      <div class="ctrl-section-title" id="obj-ctrl-title">Object</div>
-      <div class="ctrl-group">
-        <div class="ctrl-label">Position on floor</div>
-        <div class="ctrl-hint">Drag the object on the frame to move it, or click here.</div>
-        <div class="grid-picker" id="ctrl-position" style="margin-top:8px;">
-          <button data-pos="top-left">TL</button><button data-pos="top-middle">T</button><button data-pos="top-right">TR</button>
-          <button data-pos="middle-left">L</button><button data-pos="center">●</button><button data-pos="middle-right">R</button>
-          <button data-pos="bottom-left">BL</button><button data-pos="bottom-middle">B</button><button data-pos="bottom-right">BR</button>
-        </div>
-      </div>
-      <div class="ctrl-group"><div class="ctrl-label">Size</div><div class="btn-row" id="ctrl-scale"></div></div>
-      <div class="ctrl-group"><div class="ctrl-label">Facing</div><div class="btn-row flex-wrap" id="ctrl-orientation"></div></div>
-      <div class="ctrl-group" style="padding-top:10px;border-top:1px solid var(--line);">
-        <div class="ctrl-label">Layer visibility</div>
-        <button class="btn-layer-toggle" id="btn-hide-below" title="Hide objects behind the selected one (lower layer numbers)">Hide Behind</button>
-        <div class="ctrl-hint">Ctrl+drag on the frame to rotate the camera.</div>
-      </div>
-      <div id="char-controls" style="display:none;">
-        <div class="ctrl-group"><div class="ctrl-label">Pose</div><div class="btn-row flex-wrap" id="ctrl-pose"></div></div>
-        <div class="ctrl-group"><div class="ctrl-label">Arms</div><div class="btn-row flex-wrap" id="ctrl-arms"></div></div>
-        <div class="ctrl-group"><div class="ctrl-label">Expression</div><div class="btn-row" id="ctrl-expression"></div></div>
-      </div>
-    </section>
+    <section class="ctrl-section" id="pan-cam"></section>
+    <section class="ctrl-section" id="pan-obj" hidden></section>
   </aside>
 
   <main class="panel-center">
-    <div class="canvas-wrap"><canvas id="storyboard-canvas"></canvas></div>
+    <div class="canvas-wrap"><canvas id="storyboard-canvas" width="960" height="540"></canvas></div>
     <div class="shot-actions">
       <span class="shot-info" id="shot-info"></span>
+      <button class="btn-secondary" id="btn-next">Lock camera, place objects</button>
       <button class="btn-primary" id="btn-save-shot">Save Shot</button>
       <button class="btn-secondary" id="btn-new-shot">+ New Shot</button>
       <button class="btn-secondary" id="btn-duplicate-shot">Duplicate</button>
@@ -72,12 +45,13 @@
     </div>
   </main>
 
-  <aside class="panel-right">
-    <div class="ctrl-section-title" style="padding:16px 16px 0;">Scene Objects</div>
+  <aside class="panel-right" id="panel-right" hidden>
+    <div class="ctrl-section-title" style="padding:16px 16px 0;">Scene Objects <span class="count" id="obj-count">0/3</span></div>
+    <div class="ctrl-hint" style="padding:0 16px 10px;">First object is the background. Each new one is layered in front of the previous.</div>
     <div class="obj-list" id="obj-list"></div>
     <div class="add-obj-wrap">
       <button class="btn-add-obj" id="btn-add-obj">+ Add Object</button>
-      <div class="obj-picker" id="obj-picker" style="display:none;"></div>
+      <div class="obj-picker" id="obj-picker" hidden></div>
     </div>
   </aside>
 </div>

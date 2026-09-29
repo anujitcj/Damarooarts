@@ -1,582 +1,389 @@
-// ============================================================
-// Damaroo Storyboard Simulator — app.js  (v2)
-// Real 3D scene (objects live in x/y/z), projected to a 2D frame.
-// Deterministic: same config -> same frame. No AI, no random.
-// World axes: +x = screen right, +y = up, +z = toward the camera.
-// ============================================================
-const CFG = await fetch("config.json").then(r => r.json());
-const $ = id => document.getElementById(id);
-const D2R = Math.PI / 180;
-const INK = "#22252B", ACCENT = "#F5B301";
+/* Damaroo Storyboard Simulator
+   Step 1: choose the camera against a labelled GOD reference figure.
+   Step 2: place up to 3 objects. Paint order = order added (first is the background). */
+const W = 960, H = 540, D = Math.PI / 180, MAX_OBJ = 3;
+const $ = s => document.querySelector(s);
+const cv = $('#storyboard-canvas'), g = cv.getContext('2d');
+const S = { step: 0, cam: { az: 25, el: 30, lens: 1, shot: 1 }, obs: [], sel: -1, shots: [], cur: -1, grid: false, hide: false, label: 'SHOT 001' };
+const BB = [];            // screen bounding box per object, refreshed on every render
+let CFG, OBJ, drag = null;
 
-// ── STATE ───────────────────────────────────────────────────
-let state = { showGrid: false, activeShot: null, selectedObj: null, shots: [], hideBelow: false, dragging: null, dragMode: null };
+/* ---------- helpers ---------- */
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const crs = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const nrm = a => { const l = Math.hypot(...a); return a.map(x => x / l); };
+const lerp = (a, b, t) => a.map((x, i) => x + (b[i] - x) * t);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const wrap = v => ((v + 540) % 360) - 180;
+const nice = s => s.replace(/-/g, ' ').replace(/^./, c => c.toUpperCase());
+const clone = o => JSON.parse(JSON.stringify(o));
+const num = n => 'SHOT ' + String(n).padStart(3, '0');
+const shade = (h, f) => '#' + [1, 3, 5].map(i => clamp(Math.round(parseInt(h.substr(i, 2), 16) * f), 0, 255).toString(16).padStart(2, '0')).join('');
+const seg = (k, items, cur, wrapCls = '') =>
+  `<div class="btn-row ${wrapCls}" data-k="${k}">` + items.map(([l, v]) => `<button class="btn-param${v == cur ? ' active' : ''}" data-v="${v}">${l}</button>`).join('') + '</div>';
 
-function loadFromStorage(){
-  try {
-    const raw = localStorage.getItem("damaroo_sb");
-    if (raw){ const s = JSON.parse(raw); state.shots = s.shots || []; state.activeShot = s.activeShot ?? 0; }
-  } catch(e){}
+/* ---------- camera ---------- */
+/* The lens changes the field of view AND the camera distance, so the subject keeps its size
+   and you see the real perspective difference between wide and tele. */
+function cam() {
+  const c = S.cam, K = CFG.camera, fov = K.lens[c.lens].fov * D;
+  const d = K.shotScale[c.shot].factor * Math.tan(21 * D) / Math.tan(fov / 2), az = c.az * D, el = c.el * D, T = [0, .9, 0];
+  const p = [d * Math.cos(el) * Math.sin(az), T[1] + d * Math.sin(el), d * Math.cos(el) * Math.cos(az)];
+  const f = nrm(sub(T, p)), r = nrm(crs(f, [0, 1, 0])), u = crs(r, f);
+  return { p, f, r, u, t: Math.tan(fov / 2) };
 }
-function saveToStorage(){
-  try { localStorage.setItem("damaroo_sb", JSON.stringify({ shots: state.shots, activeShot: state.activeShot })); } catch(e){}
-}
-function makeShot(){
-  return { id: Date.now(), label: "", objects: [],
-    camera: { horizontal: "center", vertical: "eye-level", lens: "normal", shotScale: "wide" } };
-}
-const currentShot = () => state.shots[state.activeShot] ?? null;
-const currentObj  = () => { const s = currentShot(); return s && state.selectedObj !== null ? s.objects[state.selectedObj] ?? null : null; };
-const shotNumLabel = i => "SHOT " + String(i + 1).padStart(3, "0");
-const byId = (arr, id, fallback) => arr.find(o => o.id === id) || arr[fallback];
-
-// ── VECTOR MATH ─────────────────────────────────────────────
-const add = (a, b) => [a[0]+b[0], a[1]+b[1], a[2]+b[2]];
-const sub = (a, b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
-const mul = (a, k) => [a[0]*k, a[1]*k, a[2]*k];
-const dot = (a, b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
-const cross = (a, b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
-const norm = a => mul(a, 1 / (Math.hypot(...a) || 1));
-const mid = (a, b) => mul(add(a, b), .5);
-function bbox(pts){
-  const lo = [1e9,1e9,1e9], hi = [-1e9,-1e9,-1e9];
-  pts.forEach(p => { for (let i = 0; i < 3; i++){ lo[i] = Math.min(lo[i], p[i]); hi[i] = Math.max(hi[i], p[i]); } });
-  return { lo, hi, c: mid(lo, hi), w: hi[0]-lo[0], h: hi[1]-lo[1], d: hi[2]-lo[2] };
+const pr = (C, v) => { const d = sub(v, C.p), z = dot(d, C.f), k = (H / 2) / C.t / z; return [W / 2 + dot(d, C.r) * k, H / 2 - dot(d, C.u) * k, z, k]; };
+function floorHit(C, sx, sy) {             // screen point -> floor (x,z)
+  const nx = (sx - W / 2) / (H / 2) * C.t, ny = -(sy - H / 2) / (H / 2) * C.t;
+  const d = [0, 1, 2].map(i => C.f[i] + C.r[i] * nx + C.u[i] * ny);
+  if (d[1] >= -1e-4) return null;
+  const s = -C.p[1] / d[1];
+  return s > 0 ? [C.p[0] + d[0] * s, C.p[2] + d[2] * s] : null;
 }
 
-// ── SCENE LAYOUT ────────────────────────────────────────────
-// Grid position = spot on the FLOOR (left/right, far/near).
-// Z-index (array order) determines depth: last object in array is foremost.
-// Older objects = farther back, newer objects = closer to camera.
-const GRID_POS = {
-  "top-left":[0,0], "top-middle":[1,0], "top-right":[2,0],
-  "middle-left":[0,1], "center":[1,1], "middle-right":[2,1],
-  "bottom-left":[0,2], "bottom-middle":[1,2], "bottom-right":[2,2]
-};
-const COLX = [-2.6, 0, 2.6], ROWZ = [-1.4, 0, 1.4];
-// Which way an object FACES (yaw about the vertical axis). "right" faces screen-right.
-const ORI = { front:0, right:90, back:180, left:-90, "three-quarter-right":45, "three-quarter-left":-45 };
-
-function place(o, idx, total){
-  const [c, r] = GRID_POS[o.position] || [1, 1];
-  // Newer objects (higher idx) are closer; layer spacing = 0.6 per object
-  const layerZ = (idx - total + 1) * 0.6;
-  return [COLX[c], 0, ROWZ[r] + layerZ];
-}
-
-// ── 3D MODELS ───────────────────────────────────────────────
-// Box parts: [cx, cy, cz, w, h, d, colour] in metres, front = +z.
-const S = "#8A6F4E";
-const PARTS = {
-  bed:    [[0,.12,0,1.06,.24,2.06,"#B9A88C"],[0,.3,.02,1,.2,1.96,"#E8E4DC"],[0,.6,-1.03,1.06,.9,.06,S],[0,.45,-.7,.7,.1,.35,"#FFFFFF"]],
-  chair:  [[0,.45,0,.5,.06,.5,"#DAD3C6"],[0,.78,-.22,.5,.6,.06,"#DAD3C6"],...[[-1,-1],[1,-1],[-1,1],[1,1]].map(([x,z]) => [x*.21,.21,z*.21,.05,.42,.05,S])],
-  sofa:   [[0,.25,0,1.8,.3,.8,"#C9C3B8"],[0,.65,-.33,1.8,.5,.15,"#BDB7AB"],[-.85,.45,.05,.15,.4,.7,"#BDB7AB"],[.85,.45,.05,.15,.4,.7,"#BDB7AB"]],
-  table:  [[0,.72,0,1.2,.06,.7,"#D8CDB8"],...[[-1,-1],[1,-1],[-1,1],[1,1]].map(([x,z]) => [x*.55,.36,z*.3,.06,.7,.06,S])],
-  door:   [[0,1.02,0,.9,2.04,.06,"#E5E0D8"],[.32,1,.05,.06,.06,.05,"#8A8580"]],
-  window: [[0,1.5,0,1.2,1,.08,S],[0,1.5,.045,1.04,.84,.02,"#CFE4F4"]],
-  phone:  [[0,.25,0,.22,.45,.04,"#2A2825"],[0,.26,.022,.19,.38,.005,"#CFE4F4"]],
-  laptop: [[0,.02,0,.5,.03,.35,"#BCBAB5"],[0,.22,-.16,.5,.4,.02,"#8C8A85"],[0,.22,-.148,.46,.34,.005,"#1F4E79"]],
-  car:    [[0,.55,0,1.8,.6,4.2,"#C9C4BA"],[0,1.1,-.2,1.6,.5,2.2,"#8AB0D0"],...[[-1,-1],[1,-1],[-1,1],[1,1]].map(([x,z]) => [x*.9,.3,z*1.3,.2,.6,.6,"#4A4744"])]
-};
-
-function boxFaces(b){
-  const [cx, cy, cz, w, h, d] = b, hs = [w/2, h/2, d/2], c = [cx, cy, cz], out = [];
-  for (let a = 0; a < 3; a++) for (const s of [-1, 1]){
-    const u = (a+1)%3, v = (a+2)%3, q = [];
-    for (const [su, sv] of [[-1,-1],[1,-1],[1,1],[-1,1]]){
-      const p = [0,0,0]; p[a] = c[a] + s*hs[a]; p[u] = c[u] + su*hs[u]; p[v] = c[v] + sv*hs[v]; q.push(p);
-    }
-    const n = [0,0,0]; n[a] = s; out.push({ n, q, color: b[6] });
+/* ---------- box geometry: [cx,cy,cz,w,h,d,color,labels] ---------- */
+const FI = [[1, 3, 7, 5], [0, 2, 6, 4], [2, 3, 7, 6], [0, 1, 5, 4], [4, 5, 7, 6], [0, 1, 3, 2]];
+const NRM = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+const LB = { 0: [5, 1, 7], 1: [0, 4, 2], 2: [6, 7, 2], 4: [4, 5, 6], 5: [1, 0, 3] };
+const LIGHT = nrm([-.4, .8, .5]);
+function faces(bx, pos, yaw, sc) {
+  const out = [], cs = Math.cos(yaw), sn = Math.sin(yaw);
+  const T = (x, y, z) => [pos[0] + sc * (x * cs + z * sn), sc * y, pos[2] + sc * (-x * sn + z * cs)];
+  for (const [cx, cy, cz, w, h, d, col, lab] of bx) {
+    const vs = [];
+    for (let i = 0; i < 8; i++) vs.push(T(cx + ((i & 1) - .5) * w, cy + ((i >> 1 & 1) - .5) * h, cz + ((i >> 2 & 1) - .5) * d));
+    FI.forEach((f, fi) => {
+      const n = NRM[fi], nw = [n[0] * cs + n[2] * sn, n[1], -n[0] * sn + n[2] * cs], v = f.map(i => vs[i]);
+      out.push({ v, vs, fi, n: nw, c: [0, 1, 2].map(k => (v[0][k] + v[2][k]) / 2), col, lab: lab && lab[fi] });
+    });
   }
   return out;
 }
+function draw(C, fs) {
+  let b = [1e9, 1e9, -1e9, -1e9];
+  const dist = f => { const d = sub(f.c, C.p); return dot(d, d); };
+  fs.filter(f => dot(f.n, sub(f.c, C.p)) < 0).sort((a, b) => dist(b) - dist(a)).forEach(f => {
+    const P = f.v.map(v => pr(C, v));
+    if (P.some(p => p[2] < .2)) return;
+    g.beginPath();
+    P.forEach((p, i) => { i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]); b = [Math.min(b[0], p[0]), Math.min(b[1], p[1]), Math.max(b[2], p[0]), Math.max(b[3], p[1])]; });
+    g.closePath();
+    g.fillStyle = shade(f.col, .55 + .45 * Math.max(0, dot(f.n, LIGHT))); g.fill();
+    g.strokeStyle = '#222'; g.lineWidth = 1.2; g.lineJoin = 'round'; g.stroke();
+    if (f.lab) {                            // text laid onto the face in perspective
+      const [a, bb, c] = LB[f.fi].map(i => pr(C, f.vs[i]));
+      g.save(); g.setTransform(1, 0, 0, 1, 0, 0);
+      g.transform((bb[0] - a[0]) / 100, (bb[1] - a[1]) / 100, (a[0] - c[0]) / 100, (a[1] - c[1]) / 100, c[0], c[1]);
+      g.fillStyle = '#111'; g.font = 'bold 21px ui-monospace,monospace'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(f.lab, 50, 50);
+      g.restore();
+    }
+  });
+  return b;
+}
 
-// Character skeleton (local space, facing +z, ~1.75 m tall)
-const POSES = {
-  standing:  { hip:[0,.95,0],  neck:[0,1.5,0],  knee:[.1,.5,.03],  foot:[.11,0,.05],  fwd:[0,0,1], up:[0,1,0] },
-  sitting:   { hip:[0,.5,0],   neck:[0,1.05,0], knee:[.1,.52,.42], foot:[.1,0,.45],   fwd:[0,0,1], up:[0,1,0] },
-  crouching: { hip:[0,.42,-.05], neck:[0,.95,.12], knee:[.12,.55,.32], foot:[.12,0,.18], fwd:[0,0,1], up:[0,1,0] },
-  sleeping:  { hip:[0,.1,0],   neck:[0,.1,.55], knee:[.09,.1,-.42], foot:[.1,.06,-.85], fwd:[0,1,0], up:[0,0,1] }
+/* ---------- object library (built from config ids) ---------- */
+const SK = '#E8C39E', PA = '#3F4756', WD = '#B08968', HAIR = '#2b1d14', NOSE = '#c9a07a';
+const pair = (x, ...r) => [[-x, ...r], [x, ...r]];
+const q4 = (x, y, z, ...r) => [[-x, y, -z, ...r], [x, y, -z, ...r], [-x, y, z, ...r], [x, y, z, ...r]];
+function person(col, wm, o) {
+  const pose = o.pose, ex = o.expr, ar = o.arms, slp = pose == 'sleeping';
+  const arm = (x, up) => {
+    if (slp) return [x, .15, up ? -.62 : .05, .13, .16, .62, col];
+    const [sy, z] = { standing: [1.44, 0], sitting: [1.14, .02], crouching: [1.2, .1] }[pose];
+    return up ? [x, sy + .28, z, .13, .62, .16, col] : [x, sy - .3, z, .13, .62, .16, col];
+  };
+  const B = {
+    standing: { p: [...pair(.13, .4, 0, .22, .8, .24, PA), [0, 1.13, 0, .52, .66, .28, col]], h: [1.58, 0] },
+    sitting: { p: [...pair(.13, .45, .22, .22, .2, .5, PA), ...pair(.13, .22, .45, .2, .44, .2, PA), [0, .83, 0, .52, .66, .28, col]], h: [1.31, 0] },
+    crouching: { p: [...pair(.13, .45, .2, .22, .22, .45, PA), ...pair(.13, .25, .42, .2, .5, .2, PA), [0, .9, .05, .52, .6, .28, col]], h: [1.35, .08] },
+    sleeping: { p: [...pair(.12, .12, .75, .2, .22, .8, PA), [0, .15, 0, .52, .28, .66, col]], h: [.16, -.5] }
+  }[pose];
+  const [hy, hz] = B.h;
+  // face features sit on the front of the head (or on top when lying down)
+  const f = (x, dy, w, h) => slp ? [x, hy + .145, hz - dy, w, .02, h, '#111'] : [x, hy + dy, hz + .145, w, h, .02, '#111'];
+  const mouth = ex == 'smile' ? [f(0, -.07, .1, .02), f(-.06, -.05, .02, .03), f(.06, -.05, .02, .03)]
+    : ex == 'sad' ? [f(0, -.09, .1, .02), f(-.06, -.11, .02, .03), f(.06, -.11, .02, .03)] : [f(0, -.08, .1, .02)];
+  return [
+    ...B.p, arm(-.35, ar == 'both-raised'), arm(.35, ar != 'both-down'),
+    [0, hy, hz, .28, .28, .28, SK],
+    slp ? [0, hy + .16, hz + .02, .06, .06, .06, NOSE] : [0, hy - .02, hz + .16, .06, .06, .06, NOSE],
+    f(-.06, .04, .04, .04), f(.06, .04, .04, .04), ...mouth,
+    slp ? [0, hy + .02, hz - .16, .3, .3, .08, HAIR] : [0, hy + .15, hz - .01, .3, .07, .3, HAIR],
+    ...(wm && !slp ? [[0, hy - .05, hz - .14, .3, .34, .08, HAIR]] : [])
+  ];
+}
+const BUILD = {
+  man: o => person('#3B82C4', 0, o), woman: o => person('#D45B8C', 1, o),
+  chair: () => [[0, .45, 0, .5, .08, .5, WD], ...q4(.2, .2, .2, .06, .4, .06, WD), [0, .8, -.22, .5, .7, .06, WD]],
+  table: () => [[0, .75, 0, 1.4, .08, .8, WD], ...q4(.6, .36, .32, .08, .72, .08, WD)],
+  sofa: () => [[0, .25, 0, 1.8, .5, .8, '#7C6A8F'], [0, .7, -.32, 1.8, .5, .16, '#6B5A7E'], ...pair(.85, .5, .05, .16, .4, .7, '#6B5A7E')],
+  bed: () => [[0, .25, 0, 1, .4, 2, WD], [0, .5, 0, .96, .16, 1.9, '#DDE3EA'], [0, .62, -.75, .6, .12, .3, '#fff'], [0, .65, -1, 1, .6, .08, WD]],
+  car: () => [[0, .4, 0, 1.7, .5, 4, '#C0392B'], [0, .85, -.1, 1.5, .5, 2, '#A93226'], [0, .85, .92, 1.4, .4, .06, '#9CC7E6'], ...q4(.85, .3, 1.3, .2, .6, .6, '#222')],
+  door: () => [[0, 1, 0, 1, 2, .12, '#8B5E3C'], [.35, 1, .09, .08, .08, .1, '#D4AF37']],
+  window: () => [[0, 1.4, 0, 1.3, 1.1, .1, '#E5E7EB'], [0, 1.4, .03, 1.1, .9, .06, '#9CC7E6']],
+  phone: () => [[0, .2, 0, .22, .4, .04, '#1F2937'], [0, .2, .023, .19, .35, .01, '#7DD3FC'], [0, .06, .025, .06, .02, .01, '#374151']],
+  laptop: () => [[0, .03, .1, .6, .04, .42, '#9CA3AF'], [0, .28, -.1, .6, .46, .03, '#374151'], [0, .28, -.083, .54, .4, .01, '#7DD3FC']]
 };
-function charRig(pose, arms, woman){
-  const P = POSES[pose] || POSES.standing, { hip, neck } = P, u = norm(sub(neck, hip));
-  const head = add(neck, mul(u, .13)), sc = sub(neck, mul(u, .05));
-  const sh = s => add(sc, [s*.2, 0, 0]), hp = s => add(hip, [s*.09, 0, 0]);
-  const armFwd = (pose === "sitting" || pose === "crouching") ? [0, 0, .18] : [0, 0, 0];
-  const raised = s => arms === "both-raised" || (arms === "one-raised" && s > 0);
-  const segs = [[hip, neck], [neck, head], [sh(-1), sh(1)], [hp(-1), hp(1)]];
-  for (const s of [-1, 1]){
-    const a = sh(s), k = [s*P.knee[0], P.knee[1], P.knee[2]], f = [s*P.foot[0], P.foot[1], P.foot[2]];
-    segs.push([a, raised(s) ? add(a, add(mul(u, .6), [s*.12, 0, .05])) : add(a, add(mul(u, -.58), add([s*.05, 0, 0], armFwd)))]);
-    segs.push([hp(s), k], [k, f]);
+const GOD = [
+  [0, .6, 0, 1.3, 1.2, 1.3, '#9CA3AF', { 4: 'FRONT', 5: 'BACK', 0: 'RIGHT', 1: 'LEFT' }],
+  [0, 1.55, 0, .7, .7, .7, '#D1D5DB', { 2: 'TOP' }], [0, 1.5, .42, .16, .16, .16, '#F5B301']
+];
+
+/* ---------- scene rendering ---------- */
+function ln(C, a, b) {
+  const za = dot(sub(a, C.p), C.f), zb = dot(sub(b, C.p), C.f);
+  if (za < .2 && zb < .2) return;
+  if (za < .2) a = lerp(a, b, (.2 - za) / (zb - za)); else if (zb < .2) b = lerp(b, a, (.2 - zb) / (za - zb));
+  const p = pr(C, a), q = pr(C, b); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]);
+}
+function floor(C) {
+  g.strokeStyle = '#DAD8D1'; g.lineWidth = 1; g.beginPath();
+  for (let i = -10; i <= 10; i++) { ln(C, [i, 0, -10], [i, 0, 10]); ln(C, [-10, 0, i], [10, 0, i]); }
+  g.stroke();
+}
+function ring(C) {                          // angle ring around the GOD figure
+  g.strokeStyle = '#F5B301'; g.lineWidth = 2; g.beginPath();
+  for (let a = 0; a < 64; a++) ln(C, [3 * Math.sin(a / 64 * 6.283), 0, 3 * Math.cos(a / 64 * 6.283)], [3 * Math.sin((a + 1) / 64 * 6.283), 0, 3 * Math.cos((a + 1) / 64 * 6.283)]);
+  g.stroke();
+  for (let a = -180; a < 180; a += 45) {
+    const p = pr(C, [3.5 * Math.sin(a * D), 0, 3.5 * Math.cos(a * D)]); if (p[2] < .5) continue;
+    g.font = 'bold ' + clamp(.3 * p[3], 10, 26) + 'px ui-monospace,monospace'; g.fillStyle = '#B45309'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(a + '°', p[0], p[1]);
   }
-  let skirt = null;
-  if (woman && pose !== "sleeping"){
-    const m = s => { const k = [s*P.knee[0], P.knee[1], P.knee[2]]; return add(add(hp(s), mul(sub(k, hp(s)), .55)), [s*.1, 0, 0]); };
-    skirt = [hp(-1), hp(1), m(1), m(-1)];
+}
+function objFaces(o) {                      // camera-relative facing; size normalised so config "medium" = 1
+  return faces(BUILD[o.t](o), [o.x, 0, o.z], (S.cam.az + o.rel) * D, CFG.scale[o.s].factor / .85);
+}
+function render(clean) {
+  const C = cam();
+  g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); floor(C);
+  BB.length = 0;
+  if (S.step == 0 && !clean) { ring(C); draw(C, faces(GOD, [0, 0, 0], 0, 1)); }
+  S.obs.forEach((o, i) => {                 // painter order = layer order: first added is furthest back
+    if (!clean && S.hide && S.step == 1 && S.sel >= 0 && i < S.sel) return;
+    BB[i] = draw(C, objFaces(o));
+  });
+  if (!clean) {
+    if (S.step == 1 && BB[S.sel]) { const b = BB[S.sel]; g.strokeStyle = '#F5B301'; g.lineWidth = 2; g.setLineDash([6, 4]); g.strokeRect(b[0] - 6, b[1] - 6, b[2] - b[0] + 12, b[3] - b[1] + 12); g.setLineDash([]); }
+    if (S.grid) { g.strokeStyle = 'rgba(245,179,1,.7)'; g.lineWidth = 1; g.beginPath(); for (let i = 1; i < 3; i++) { g.moveTo(W * i / 3, 0); g.lineTo(W * i / 3, H); g.moveTo(0, H * i / 3); g.lineTo(W, H * i / 3); } g.stroke(); }
+    const K = CFG.camera;
+    $('#shot-info').textContent = `az ${S.cam.az}° · el ${S.cam.el}° · ${K.lens[S.cam.lens].label} lens · ${K.shotScale[S.cam.shot].label} shot · ${S.obs.length}/${MAX_OBJ} objects`;
   }
-  return { segs, head, skirt, fwd: P.fwd, up: P.up, hip };
 }
 
-function buildModel(o, idx, shot){
-  const def = CFG.objects.find(x => x.id === o.type) || {};
-  const k = (CFG.scale.find(s => s.id === o.scale)?.factor ?? .85) / .85;
-  const yaw = (ORI[o.orientation] ?? 0) * D2R, cs = Math.cos(yaw), sn = Math.sin(yaw), pos = place(o, idx, shot.objects.length);
-  const R = v => [v[0]*cs + v[2]*sn, v[1], -v[0]*sn + v[2]*cs];
-  const T = p => { const q = R(mul(p, k)); return [pos[0] + q[0], q[1], pos[2] + q[2]]; };
-
-  if (def.category === "character"){
-    const rig = charRig(o.pose || "standing", o.arms || "both-down", def.id === "woman");
-    const m = { kind: "char", color: def.color || "#3B82C4", pos, expr: o.expression || "neutral", idx,
-      segs: rig.segs.map(s => [T(s[0]), T(s[1])]), skirt: rig.skirt && rig.skirt.map(T),
-      headC: T(rig.head), headR: .11 * k, fwd: R(rig.fwd), up: R(rig.up), hipW: T(rig.hip) };
-    m.pts = m.segs.flat().concat([add(m.headC, [0, m.headR, 0]), add(m.headC, [0, -m.headR, 0])]);
-    m.bb = bbox(m.pts);
-    return m;
-  }
-  const faces = (PARTS[o.type] || [[0,.3,0,.6,.6,.6,"#DDD"]]).flatMap(boxFaces)
-    .map(f => ({ n: R(f.n), q: f.q.map(T), color: f.color }));
-  const pts = faces.flatMap(f => f.q);
-  return { kind: "obj", faces, pts, bb: bbox(pts), pos, idx };
+/* ---------- camera panel ---------- */
+const pCam = $('#pan-cam'), pObj = $('#pan-obj');
+function buildCam() {
+  const K = CFG.camera;
+  pCam.innerHTML = `<div class="ctrl-section-title">Camera</div>
+  <div class="ctrl-hint" style="margin:-4px 0 14px">The block in the frame is the reference figure. Its faces and the floor ring show the angle you are looking from. Drag the frame to orbit.</div>
+  <div class="ctrl-group"><div class="ctrl-label">Horizontal angle</div>${seg('h', K.horizontal.map(o => [o.label, o.angle]), S.cam.az, 'flex-wrap')}
+    <div class="slider-row"><input type="range" id="sl-az" min="-180" max="180"><b id="v-az"></b></div></div>
+  <div class="ctrl-group"><div class="ctrl-label">Vertical angle</div>${seg('v', K.vertical.map(o => [o.label, o.angle]), S.cam.el, 'flex-wrap')}
+    <div class="slider-row"><input type="range" id="sl-el" min="-60" max="85"><b id="v-el"></b></div></div>
+  <div class="ctrl-group"><div class="ctrl-label">Lens</div>${seg('lens', K.lens.map((o, i) => [o.label, i]), S.cam.lens)}</div>
+  <div class="ctrl-group"><div class="ctrl-label">Shot size</div>${seg('shot', K.shotScale.map((o, i) => [o.label, i]), S.cam.shot)}</div>
+  <div class="ctrl-group"><div class="ctrl-label">Camera position (top view, drag to move)</div><canvas id="cam-map" width="240" height="240"></canvas></div>`;
 }
+function drawMap() {
+  const m = $('#cam-map').getContext('2d'), c = 120, R = 92;
+  m.clearRect(0, 0, 240, 240); m.fillStyle = '#1C2028'; m.fillRect(0, 0, 240, 240);
+  m.strokeStyle = '#2A2F3A'; m.beginPath(); m.arc(c, c, R, 0, 7); m.stroke();
+  m.fillStyle = '#5D6473'; m.font = '9px monospace'; m.textAlign = 'center';
+  for (let a = -180; a < 180; a += 45) m.fillText(a + '°', c + (R + 14) * Math.sin(a * D), c + (R + 14) * Math.cos(a * D) + 3);
+  m.fillStyle = '#9CA3AF'; m.fillRect(c - 9, c - 9, 18, 18); m.fillStyle = '#F5B301'; m.fillRect(c - 3, c + 9, 6, 4);
+  const a = S.cam.az * D, x = c + R * Math.sin(a), y = c + R * Math.cos(a);
+  const hf = Math.atan(Math.tan(CFG.camera.lens[S.cam.lens].fov * D / 2) * 16 / 9), b = Math.atan2(c - y, c - x);
+  m.strokeStyle = '#F5B301'; m.beginPath();
+  [-hf, hf].forEach(s => { m.moveTo(x, y); m.lineTo(x + 70 * Math.cos(b + s), y + 70 * Math.sin(b + s)); }); m.stroke();
+  m.fillStyle = '#F5B301'; m.beginPath(); m.arc(x, y, 7, 0, 7); m.fill();
+}
+function syncCam() {
+  const c = S.cam;
+  $('#sl-az').value = c.az; $('#sl-el').value = c.el; $('#v-az').textContent = c.az + '°'; $('#v-el').textContent = c.el + '°';
+  pCam.querySelectorAll('.btn-row').forEach(r => {
+    const k = r.dataset.k, cur = k == 'h' ? c.az : k == 'v' ? c.el : c[k];
+    r.querySelectorAll('.btn-param').forEach(b => b.classList.toggle('active', +b.dataset.v == cur));
+  });
+  drawMap(); render();
+}
+pCam.addEventListener('click', e => {
+  const b = e.target.closest('.btn-param'); if (!b) return;
+  const k = b.parentNode.dataset.k; S.cam[k == 'h' ? 'az' : k == 'v' ? 'el' : k] = +b.dataset.v; syncCam();
+});
+pCam.addEventListener('input', e => {
+  if (e.target.id == 'sl-az') S.cam.az = +e.target.value;
+  if (e.target.id == 'sl-el') S.cam.el = +e.target.value;
+  syncCam();
+});
+let mapDown = false;
+const mapMove = e => { const m = $('#cam-map'), r = m.getBoundingClientRect(), k = 240 / r.width; S.cam.az = Math.round(Math.atan2((e.clientX - r.left) * k - 120, (e.clientY - r.top) * k - 120) / D); syncCam(); };
+pCam.addEventListener('pointerdown', e => { if (e.target.id != 'cam-map') return; mapDown = true; e.target.setPointerCapture(e.pointerId); mapMove(e); });
+pCam.addEventListener('pointermove', e => mapDown && mapMove(e));
+pCam.addEventListener('pointerup', () => mapDown = false);
 
-// ── CAMERA ──────────────────────────────────────────────────
-// Horizontal = orbit left/right, Vertical = orbit up/down (top = looking down).
-// Shot scale frames the subject: Wide = whole scene / full body,
-// Medium = waist-up, Close = the face.
-function makeCam(shot, models, W, H, sel){
-  // If an object is selected, use its per-object camera. Otherwise use global shot camera.
-  let useCam;
-  if (sel != null && models[sel]?.cam){ useCam = models[sel].cam; }
-  else { useCam = shot.camera; }
-  
-  const cfg = CFG.camera;
-  const az = byId(cfg.horizontal, useCam.horizontal, 2).angle * D2R;
-  const pt = byId(cfg.vertical, useCam.vertical, 2).angle * D2R;
-  const fov = 40 * D2R * byId(cfg.lens, useCam.lens, 1).fov;
-  const fr = byId(cfg.shotScale, useCam.shotScale, 0).id;
-  const asp = W / H, bb = bbox(models.flatMap(m => m.pts));
-  const hero = models[sel] ?? models.find(m => m.kind === "char") ?? models[0];
-  let tgt, vis;
-  if (fr === "wide"){
-    tgt = bb.c; vis = Math.max(1.8, bb.h * 1.35, Math.hypot(bb.w, bb.d) * 1.2 / asp);
-  } else if (hero.kind === "char"){
-    if (fr === "medium"){ tgt = mid(hero.hipW, hero.headC); vis = Math.max(1.1, Math.hypot(...sub(hero.headC, hero.hipW)) * 1.5); }
-    else { tgt = hero.headC; vis = hero.headR * 4.4; }
+/* ---------- object panels ---------- */
+const CELLS = [[0, 0, 'TL'], [1, 0, 'T'], [2, 0, 'TR'], [0, 1, 'L'], [1, 1, '●'], [2, 1, 'R'], [0, 2, 'BL'], [1, 2, 'B'], [2, 2, 'BR']];
+const cellXD = (c, r) => [(c - 1) * 2.4, (1 - r) * 2.2];                 // camera-relative: x right, depth away
+function toWorld(x, dp) { const a = S.cam.az * D; return [x * Math.cos(a) - dp * Math.sin(a), -x * Math.sin(a) - dp * Math.cos(a)]; }
+function toCamRel(wx, wz) { const a = S.cam.az * D; return [wx * Math.cos(a) - wz * Math.sin(a), -wx * Math.sin(a) - wz * Math.cos(a)]; }
+const isChar = o => OBJ[o.t].category == 'character';
+function buildObj() {
+  const o = S.obs[S.sel];
+  if (!o) { pObj.innerHTML = `<div class="ctrl-section-title">Object</div><div class="empty-hint">${S.obs.length ? 'Click an object on the frame<br>or in the list to edit it.' : 'Add your first object.<br>It becomes the <b>background</b> layer.'}</div>`; return; }
+  const [rx, dp] = toCamRel(o.x, o.z);
+  let best = null, bd = .9; CELLS.forEach(([c, r]) => { const [cx, cd] = cellXD(c, r), d = Math.hypot(cx - rx, cd - dp); if (d < bd) { bd = d; best = c + ',' + r; } });
+  const rel = CFG.orientationLabels || {};
+  const REL = [['Front', 0], ['¾ Right', 45], ['Right', 90], ['¾ Back R', 135], ['Back', 180], ['¾ Back L', -135], ['Left', -90], ['¾ Left', -45]];
+  let h = `<div class="ctrl-section-title">${OBJ[o.t].label} · layer ${S.sel + 1}</div>
+  <div class="ctrl-group"><div class="ctrl-label">Position on floor</div>
+    <div class="ctrl-hint">Drag the object on the frame to move it, or click here.</div>
+    <div class="grid-picker" style="margin-top:8px">${CELLS.map(([c, r, t]) => `<button data-pos="${c},${r}" class="${best == c + ',' + r ? 'active' : ''}">${t}</button>`).join('')}</div></div>
+  <div class="ctrl-group"><div class="ctrl-label">Size</div>${seg('s', CFG.scale.map((x, i) => [x.label, i]), o.s)}</div>
+  <div class="ctrl-group"><div class="ctrl-label">Facing (relative to camera)</div>${seg('rel', REL.map(([l, v]) => [l, v]), o.rel, 'flex-wrap')}</div>`;
+  if (isChar(o)) {
+    const c = OBJ[o.t];
+    h += `<div class="ctrl-group"><div class="ctrl-label">Pose</div>${seg('pose', c.poses.map(p => [nice(p), p]), o.pose, 'flex-wrap')}</div>
+    <div class="ctrl-group"><div class="ctrl-label">Arms</div>${seg('arms', c.arms.map(p => [nice(p), p]), o.arms, 'flex-wrap')}</div>
+    <div class="ctrl-group"><div class="ctrl-label">Expression</div>${seg('expr', c.expressions.map(p => [nice(p), p]), o.expr)}</div>`;
+  }
+  h += `<div class="ctrl-group" style="padding-top:10px;border-top:1px solid var(--line)"><div class="ctrl-label">Layer visibility</div>
+    <button class="btn-layer-toggle${S.hide ? ' active' : ''}" id="btn-hide-below" title="Hide objects behind the selected one">Hide Behind</button>
+    <div class="ctrl-hint">Ctrl+drag on the frame to orbit the camera.</div></div>`;
+  pObj.innerHTML = h;
+}
+pObj.addEventListener('click', e => {
+  const b = e.target.closest('button'), o = S.obs[S.sel]; if (!b || !o) return;
+  if (b.dataset.pos) { const [c, r] = b.dataset.pos.split(',').map(Number), [x, dp] = cellXD(c, r); [o.x, o.z] = toWorld(x, dp); }
+  else if (b.id == 'btn-hide-below') S.hide = !S.hide;
+  else if (b.parentNode.dataset.k) { const k = b.parentNode.dataset.k; o[k] = (k == 's' || k == 'rel') ? +b.dataset.v : b.dataset.v; }
+  refresh();
+});
+
+/* right panel: scene object list + picker */
+function renderList() {
+  const n = S.obs.length, layer = i => i == 0 ? 'Background' : i == n - 1 ? 'Foreground' : 'Middle';
+  $('#obj-count').textContent = n + '/' + MAX_OBJ;
+  $('#obj-list').innerHTML = n ? S.obs.map((o, i) => `<div class="obj-item${i == S.sel ? ' active' : ''}" data-sel="${i}">
+    <span class="obj-item-layer">${i + 1}</span><div class="obj-item-info"><div class="obj-item-name">${OBJ[o.t].label}</div>
+    <div class="obj-item-meta">${layer(i)}${isChar(o) ? ' · ' + nice(o.pose) + ' · ' + nice(o.expr) : ''}</div></div>
+    <button class="obj-item-del" data-del="${i}" title="Remove">×</button></div>`).join('') : '<div class="empty-hint">No objects yet.</div>';
+  $('#btn-add-obj').disabled = n >= MAX_OBJ;
+  $('#btn-add-obj').textContent = n >= MAX_OBJ ? 'Maximum 3 objects' : '+ Add Object';
+}
+function refresh() { buildObj(); renderList(); render(); }
+$('#obj-list').addEventListener('click', e => {
+  const d = e.target.closest('[data-del]'), s = e.target.closest('[data-sel]');
+  if (d) { S.obs.splice(+d.dataset.del, 1); S.sel = S.obs.length - 1; } else if (s) S.sel = +s.dataset.sel; else return;
+  refresh();
+});
+const picker = $('#obj-picker');
+$('#btn-add-obj').addEventListener('click', e => {
+  e.stopPropagation();
+  picker.innerHTML = CFG.objects.map(o => `<button class="obj-picker-item" data-add="${o.id}">${o.label}<span class="obj-picker-cat">${o.category}</span></button>`).join('');
+  picker.hidden = !picker.hidden;
+});
+picker.addEventListener('click', e => {
+  const b = e.target.closest('[data-add]'); if (!b || S.obs.length >= MAX_OBJ) return;
+  const c = OBJ[b.dataset.add], i = S.obs.length, [dx, dp] = [[-2, 1.6], [0, 0], [2, -1]][i], [x, z] = toWorld(dx, dp);
+  S.obs.push({ t: c.id, x, z, s: 1, rel: 0, pose: 'standing', arms: 'both-down', expr: 'neutral' });
+  S.sel = S.obs.length - 1; picker.hidden = true; refresh();
+});
+document.addEventListener('click', e => { if (!e.target.closest('.add-obj-wrap')) picker.hidden = true; });
+
+/* ---------- mouse: orbit camera (step 1, or Ctrl+drag) / drag objects (step 2) ---------- */
+const pt = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height]; };
+const hit = (x, y) => { for (let k = S.obs.length - 1; k >= 0; k--) { const b = BB[k]; if (b && x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]) return k; } return -1; };
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('pointerdown', e => {
+  const [x, y] = pt(e); cv.setPointerCapture(e.pointerId);
+  if (S.step == 0 || e.ctrlKey || e.metaKey) { drag = { m: 'o', x: e.clientX, y: e.clientY, az: S.cam.az, el: S.cam.el }; cv.classList.add('grabbing'); return; }
+  const i = hit(x, y); S.sel = i; refresh();
+  if (i < 0) return;
+  const h = floorHit(cam(), x, y), o = S.obs[i];
+  drag = { m: 'm', i, dx: h ? o.x - h[0] : 0, dz: h ? o.z - h[1] : 0 };
+  cv.classList.add('grabbing');
+});
+cv.addEventListener('pointermove', e => {
+  if (!drag) { if (S.step == 1) { const [x, y] = pt(e); cv.classList.toggle('over-obj', hit(x, y) >= 0); } return; }
+  if (drag.m == 'o') {
+    S.cam.az = wrap(Math.round(drag.az - (e.clientX - drag.x) * .4));
+    S.cam.el = clamp(Math.round(drag.el + (e.clientY - drag.y) * .3), -60, 85);
+    syncCam();
   } else {
-    const big = Math.max(hero.bb.w, hero.bb.h, hero.bb.d);
-    tgt = hero.bb.c; vis = big * (fr === "medium" ? 1.1 : .5);
+    const [x, y] = pt(e), h = floorHit(cam(), x, y);
+    if (h) { const o = S.obs[drag.i]; o.x = clamp(h[0] + drag.dx, -8, 8); o.z = clamp(h[1] + drag.dz, -8, 8); render(); }
   }
-  const t = Math.tan(fov / 2), dist = vis / 2 / t;
-  const pos = add(tgt, mul([Math.sin(az)*Math.cos(pt), Math.sin(pt), Math.cos(az)*Math.cos(pt)], dist));
-  const f = norm(sub(tgt, pos)), r = norm(cross(f, [0,1,0])), u = cross(r, f), foc = (H / 2) / t;
-  const depth = P => dot(sub(P, pos), f);
-  const p = P => { const v = sub(P, pos), d = dot(v, f); return d < .05 ? null : { x: W/2 + dot(v, r)*foc/d, y: H/2 - dot(v, u)*foc/d, s: foc/d, d }; };
-  const line = (a, b) => { // near-plane clipped segment
-    let da = depth(a), db = depth(b);
-    if (da < .05 && db < .05) return null;
-    const na = da < .1 ? add(a, mul(sub(b, a), (.1 - da) / (db - da))) : a;
-    const nb = db < .1 ? add(b, mul(sub(a, b), (.1 - db) / (da - db))) : b;
-    const pa = p(na), pb = p(nb);
-    return pa && pb ? [pa, pb] : null;
-  };
-  return { pos, p, line, depth };
-}
-
-// ── RENDER ──────────────────────────────────────────────────
-const LIGHT = norm([.35, .85, .45]);
-function shade(hex, f){
-  const n = parseInt(hex.slice(1), 16);
-  return `rgb(${[n >> 16 & 255, n >> 8 & 255, n & 255].map(v => Math.round(v * f))})`;
-}
-function polyPath(g, pts){ g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.closePath(); }
-
-function render(g, W, H, shot, opt = {}){
-  g.save();
-  g.fillStyle = "#FFFFFF"; g.fillRect(0, 0, W, H);
-  g.lineCap = "round"; g.lineJoin = "round";
-  if (!shot || !shot.objects.length){
-    g.fillStyle = "#B5B8BF"; g.font = `${Math.max(11, W * .02)}px 'DM Mono', monospace`; g.textAlign = "center";
-    g.fillText("Add objects to compose the frame", W / 2, H / 2); g.restore(); return;
-  }
-  const models = shot.objects.map((o, i) => buildModel(o, i, shot));
-  const cam = makeCam(shot, models, W, H, opt.sel);
-
-  // floor grid (skipped when the camera is below the floor)
-  if (cam.pos[1] > .05){
-    g.strokeStyle = "rgba(34,37,43,.10)"; g.lineWidth = Math.max(.6, W / 900);
-    for (let i = -9; i <= 9; i++) for (const [a, b] of [[[i,0,-9],[i,0,9]], [[-9,0,i],[9,0,i]]]){
-      const l = cam.line(a, b); if (!l) continue;
-      g.beginPath(); g.moveTo(l[0].x, l[0].y); g.lineTo(l[1].x, l[1].y); g.stroke();
-    }
-  }
-  // selection ring on the floor
-  if (opt.sel != null && models[opt.sel]){
-    const m = models[opt.sel], rad = Math.max(m.bb.w, m.bb.d) / 2 + .2, ring = [];
-    for (let i = 0; i < 32; i++){ const a = i / 32 * Math.PI * 2; ring.push(cam.p([m.pos[0] + Math.cos(a)*rad, .01, m.pos[2] + Math.sin(a)*rad])); }
-    if (ring.every(Boolean)){ polyPath(g, ring); g.strokeStyle = ACCENT; g.lineWidth = Math.max(1.5, W / 420); g.setLineDash([6, 5]); g.stroke(); g.setLineDash([]); }
-  }
-  // far -> near
-  const sorted = [...models].sort((a, b) => cam.depth(b.bb.c) - cam.depth(a.bb.c));
-  const hideThreshold = state.hideBelow && opt.sel != null ? opt.sel : -1;
-  sorted.forEach(m => {
-    // If hideBelow is on and this object is behind the selected one, skip it
-    if (hideThreshold >= 0 && m.idx < hideThreshold) return;
-    m.kind === "char" ? drawChar(g, m, cam) : drawObj(g, m, cam);
-  });
-
-  if (opt.grid){
-    g.strokeStyle = "rgba(185,28,28,.35)"; g.lineWidth = 1; g.setLineDash([5, 5]);
-    for (let i = 1; i < 3; i++){ g.beginPath(); g.moveTo(W*i/3, 0); g.lineTo(W*i/3, H); g.moveTo(0, H*i/3); g.lineTo(W, H*i/3); g.stroke(); }
-    g.setLineDash([]);
-  }
-  if (opt.label){
-    g.fillStyle = "#9AA0AB"; g.font = `${Math.max(9, W * .016)}px 'DM Mono', monospace`;
-    g.textAlign = "right"; g.textBaseline = "bottom"; g.fillText(opt.label, W - 10, H - 8);
-  }
-  g.restore();
-}
-
-function drawObj(g, m, cam){
-  const items = [];
-  m.faces.forEach(f => {
-    const c = f.q.reduce((a, p) => add(a, p), [0,0,0]).map(v => v / 4);
-    if (dot(f.n, sub(cam.pos, c)) <= 0) return;           // back-face
-    const pp = f.q.map(cam.p); if (pp.some(x => !x)) return;
-    items.push({ pp, d: cam.depth(c), f });
-  });
-  items.sort((a, b) => b.d - a.d).forEach(({ pp, f }) => {
-    polyPath(g, pp);
-    g.fillStyle = shade(f.color, .7 + .3 * Math.max(0, dot(f.n, LIGHT)));
-    g.fill();
-    g.strokeStyle = INK; g.lineWidth = Math.max(1, pp[0].s * .014); g.stroke();
-  });
-}
-
-function drawChar(g, m, cam){
-  g.strokeStyle = g.fillStyle = m.color;
-  if (m.skirt){
-    const pp = m.skirt.map(cam.p);
-    if (pp.every(Boolean)){ g.globalAlpha = .28; polyPath(g, pp); g.fill(); g.globalAlpha = 1; }
-  }
-  m.segs.forEach(([a, b]) => {
-    const l = cam.line(a, b); if (!l) return;
-    g.lineWidth = Math.max(1.4, .05 * (l[0].s + l[1].s) / 2);
-    g.beginPath(); g.moveTo(l[0].x, l[0].y); g.lineTo(l[1].x, l[1].y); g.stroke();
-  });
-  const hp = cam.p(m.headC); if (!hp) return;
-  const r = m.headR * hp.s;
-  g.beginPath(); g.arc(hp.x, hp.y, r, 0, Math.PI * 2);
-  g.fillStyle = "#FFFFFF"; g.fill();
-  const facing = dot(m.fwd, norm(sub(cam.pos, m.headC)));
-  if (facing <= .05){ g.globalAlpha = .35; g.fillStyle = m.color; g.fill(); g.globalAlpha = 1; } // back/top of head = hair
-  g.lineWidth = Math.max(1.4, .05 * hp.s); g.strokeStyle = m.color; g.stroke();
-  if (facing <= .05) return;
-
-  // face features are real 3D points on the head, so they foreshorten with the camera
-  const X = norm(cross(m.up, m.fwd)), hr = m.headR;
-  const fp = (x, y, f = .93) => cam.p(add(m.headC, add(mul(X, x*hr), add(mul(m.up, y*hr), mul(m.fwd, f*hr)))));
-  g.fillStyle = m.color;
-  [-.38, .38].forEach(x => { const e = fp(x, .12); if (e){ g.beginPath(); g.arc(e.x, e.y, Math.max(1, r * .08), 0, Math.PI * 2); g.fill(); } });
-  const mouth = [];
-  for (let i = -4; i <= 4; i++){
-    const t = i / 4;
-    const y = m.expr === "smile" ? -.55 + .28*t*t : m.expr === "sad" ? -.32 - .25*t*t : -.42;
-    mouth.push(fp(t * .4, y, .9));
-  }
-  if (mouth.every(Boolean)){
-    g.beginPath(); mouth.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y));
-    g.lineWidth = Math.max(1, r * .07); g.stroke();
-  }
-}
-
-// ── CANVAS ──────────────────────────────────────────────────
-const canvas = $("storyboard-canvas"), ctx = canvas.getContext("2d");
-function sizeCanvas(){
-  const wrap = document.querySelector(".canvas-wrap");
-  const maxW = wrap.clientWidth - 48, maxH = wrap.clientHeight - 24;
-  let w = Math.min(maxW, maxH * 16 / 9), h = w * 9 / 16;
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  canvas.style.width = Math.floor(w) + "px"; canvas.style.height = Math.floor(h) + "px";
-  canvas.width = Math.floor(w * dpr); canvas.height = Math.floor(h * dpr);
-  redraw();
-}
-function redraw(){
-  const s = currentShot();
-  render(ctx, canvas.width, canvas.height, s, { sel: state.selectedObj, grid: state.showGrid, label: s && (s.label || shotNumLabel(state.activeShot)) });
-}
-window.addEventListener("resize", sizeCanvas);
-
-// ── MOUSE INTERACTIONS ──────────────────────────────────────
-canvas.addEventListener("mousedown", e => {
-  if (state.selectedObj === null) return;
-  const obj = currentObj(); if (!obj) return;
-  const rect = canvas.getBoundingClientRect();
-  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-  state.dragging = { mx, my, mode: e.ctrlKey ? "camera" : "move" };
-  state.dragMode = state.dragging.mode;
 });
-document.addEventListener("mousemove", e => {
-  if (!state.dragging) return;
-  const rect = canvas.getBoundingClientRect();
-  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-  const dx = mx - state.dragging.mx, dy = my - state.dragging.my;
-  const obj = currentObj(); if (!obj) { state.dragging = null; return; }
-  
-  if (state.dragMode === "move"){
-    // Determine which quadrant the mouse is in (relative to canvas center)
-    const cx = canvas.width / 2, cy = canvas.height / 2;
-    const quad = mx > cx ? (my > cy ? "bottom-right" : "top-right") : (my > cy ? "bottom-left" : "top-left");
-    obj.position = quad;
-    redraw();
-  } else if (state.dragMode === "camera"){
-    // Ctrl+drag rotates the camera (selected object's camera)
-    if (!obj.camera) obj.camera = { horizontal: "center", vertical: "eye-level", lens: "normal", shotScale: "wide" };
-    const hOpts = CFG.camera.horizontal, vOpts = CFG.camera.vertical;
-    const hi = Math.max(0, Math.min(hOpts.length - 1, hOpts.findIndex(o => o.id === obj.camera.horizontal) + Math.sign(dx) * 0.5));
-    const vi = Math.max(0, Math.min(vOpts.length - 1, vOpts.findIndex(o => o.id === obj.camera.vertical) + Math.sign(dy) * 0.5));
-    obj.camera.horizontal = hOpts[Math.round(hi)].id;
-    obj.camera.vertical = vOpts[Math.round(vi)].id;
-    redraw();
-  }
-  state.dragging.mx = mx; state.dragging.my = my;
+const endDrag = () => { const wasObj = drag && drag.m == 'm'; drag = null; cv.classList.remove('grabbing'); if (wasObj) buildObj(); };
+cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+
+/* ---------- steps ---------- */
+function go(n) {
+  S.step = n;
+  document.querySelectorAll('.step-tab').forEach(t => t.classList.toggle('active', +t.dataset.step == n));
+  pCam.hidden = n == 1; pObj.hidden = n == 0; $('#panel-right').hidden = n == 0;
+  $('#btn-next').textContent = n ? 'Edit camera' : 'Lock camera, place objects';
+  cv.classList.toggle('arrow', n == 1);
+  if (n) refresh(); else syncCam();
+}
+document.querySelectorAll('.step-tab').forEach(t => t.addEventListener('click', () => go(+t.dataset.step)));
+$('#btn-next').addEventListener('click', () => go(1 - S.step));
+
+/* ---------- shots, timeline, exports ---------- */
+function snap() {
+  render(true);
+  const t = document.createElement('canvas'); t.width = 224; t.height = 126; t.getContext('2d').drawImage(cv, 0, 0, 224, 126);
+  const s = { cam: { ...S.cam }, obs: clone(S.obs), img: t.toDataURL(), label: S.label }; render(); return s;
+}
+function saveShot(dup) {
+  const s = snap();
+  if (dup || S.cur < 0) { if (dup) s.label = num(S.shots.length + 1); S.shots.push(s); S.cur = S.shots.length - 1; } else S.shots[S.cur] = s;
+  S.label = s.label; renderTl();
+}
+function loadShot(i) { const s = S.shots[i]; S.cam = { ...s.cam }; S.obs = clone(s.obs); S.cur = i; S.sel = -1; S.label = s.label; renderTl(); go(S.step); }
+function renderTl() {
+  $('#shot-label').textContent = S.label;
+  $('#timeline-strip').innerHTML = S.shots.length ? S.shots.map((s, i) => `<div class="shot-thumb${i == S.cur ? ' active' : ''}" data-i="${i}">
+    <img src="${s.img}" alt=""><div class="shot-thumb-actions"><button class="shot-thumb-btn" data-dup="${i}" title="Duplicate">⧉</button><button class="shot-thumb-btn" data-x="${i}" title="Delete">×</button></div>
+    <span class="shot-thumb-label">${s.label}</span></div>`).join('') : '<div class="timeline-empty">Saved shots appear here.</div>';
+}
+$('#timeline-strip').addEventListener('click', e => {
+  const x = e.target.closest('[data-x]'), d = e.target.closest('[data-dup]'), t = e.target.closest('[data-i]');
+  if (x) { S.shots.splice(+x.dataset.x, 1); S.cur = -1; renderTl(); }
+  else if (d) { const s = clone(S.shots[+d.dataset.dup]); s.label = num(S.shots.length + 1); S.shots.push(s); renderTl(); }
+  else if (t) loadShot(+t.dataset.i);
 });
-document.addEventListener("mouseup", () => { state.dragging = null; state.dragMode = null; });
-
-
-// ── CAMERA DIAGRAM (top view + side view) ───────────────────
-function drawCamDiagram(){
-  const c = $("cam-diagram-canvas"), g = c.getContext("2d"), W = c.width, H = c.height;
-  const cam = currentShot()?.camera || {};
-  const az = byId(CFG.camera.horizontal, cam.horizontal, 2).angle * D2R;
-  const pt = byId(CFG.camera.vertical, cam.vertical, 2).angle * D2R;
-  g.clearRect(0, 0, W, H);
-  const view = (cx, cy, title, ang, top) => {
-    const R = 32;
-    g.strokeStyle = "#2F3542"; g.lineWidth = 1; g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.stroke();
-    g.fillStyle = "#8B93A3"; g.beginPath(); g.arc(cx, cy, 4, 0, Math.PI * 2); g.fill();
-    const x = top ? cx + R * Math.sin(ang) : cx - R * Math.cos(ang);
-    const y = top ? cy + R * Math.cos(ang) : cy - R * Math.sin(ang);
-    g.strokeStyle = ACCENT; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(x, y); g.lineTo(cx, cy); g.stroke(); g.setLineDash([]);
-    g.fillStyle = ACCENT; g.beginPath(); g.arc(x, y, 5, 0, Math.PI * 2); g.fill();
-    g.fillStyle = "#8B93A3"; g.font = "9px 'DM Mono', monospace"; g.textAlign = "center"; g.fillText(title, cx, H - 4);
-  };
-  view(W * .27, H / 2 - 3, "TOP VIEW", az, true);
-  view(W * .73, H / 2 - 3, "SIDE VIEW", pt, false);
-}
-
-// ── UI BUILDERS ─────────────────────────────────────────────
-function buildParamButtons(containerId, items, getter, setter){
-  const el = $(containerId); el.innerHTML = "";
-  items.forEach(item => {
-    const b = document.createElement("button");
-    b.className = "btn-param"; b.dataset.id = item.id; b.textContent = item.label;
-    if (item.angle !== undefined) b.title = item.angle + "°";
-    b.addEventListener("click", () => { setter(item.id); refreshAll(); });
-    el.appendChild(b);
+$('#btn-save-shot').addEventListener('click', () => saveShot(false));
+$('#btn-duplicate-shot').addEventListener('click', () => saveShot(true));
+$('#btn-new-shot').addEventListener('click', () => { S.obs = []; S.sel = -1; S.cur = -1; S.label = num(S.shots.length + 1); renderTl(); go(0); });
+$('#shot-label').addEventListener('input', e => { S.label = e.target.textContent.trim() || 'SHOT'; if (S.cur >= 0) { S.shots[S.cur].label = S.label; } });
+$('#shot-label').addEventListener('blur', renderTl);
+$('#shot-label').addEventListener('keydown', e => { if (e.key == 'Enter') { e.preventDefault(); e.target.blur(); } });
+$('#btn-toggle-grid').addEventListener('click', e => { S.grid = !S.grid; e.currentTarget.classList.toggle('on', S.grid); render(); });
+const download = (href, name) => { const a = document.createElement('a'); a.download = name; a.href = href; a.click(); };
+$('#btn-export-png').addEventListener('click', () => { render(true); download(cv.toDataURL('image/png'), S.label.replace(/\s+/g, '-') + '.png'); render(); });
+$('#btn-export-sheet').addEventListener('click', () => {
+  if (!S.shots.length) { alert('Save at least one shot first.'); return; }
+  const n = S.shots.length, cols = Math.min(3, n), rows = Math.ceil(n / cols), cw = 480, ch = 270, pad = 24, top = 48;
+  const c = document.createElement('canvas'); c.width = cols * (cw + pad) + pad; c.height = top + rows * (ch + 34 + pad) + pad / 2;
+  const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+  x.fillStyle = '#111'; x.font = 'bold 16px monospace'; x.textBaseline = 'alphabetic'; x.fillText('DAMAROO STORYBOARD', pad, 30);
+  const keep = [S.cam, S.obs];
+  S.shots.forEach((s, i) => {
+    S.cam = s.cam; S.obs = s.obs; render(true);
+    const px = pad + (i % cols) * (cw + pad), py = top + Math.floor(i / cols) * (ch + 34 + pad);
+    x.drawImage(cv, px, py, cw, ch); x.strokeStyle = '#111'; x.lineWidth = 1; x.strokeRect(px, py, cw, ch);
+    x.fillStyle = '#111'; x.font = '13px monospace'; x.fillText(s.label, px, py + ch + 20);
   });
-  const val = getter();
-  el.querySelectorAll(".btn-param").forEach(b => b.classList.toggle("active", b.dataset.id === val));
-}
-
-function buildCameraControls(){
-  if (!currentShot()) return;
-  const getCam = () => {
-    // If an object is selected, use its per-object camera
-    if (state.selectedObj != null && currentObj()?.camera) return currentObj().camera;
-    // Otherwise use the global shot camera
-    return currentShot().camera;
-  };
-  const setCam = (k, v) => {
-    if (state.selectedObj != null && currentObj()){
-      if (!currentObj().camera) currentObj().camera = { horizontal: "center", vertical: "eye-level", lens: "normal", shotScale: "wide" };
-      currentObj().camera[k] = v;
-    } else {
-      currentShot().camera[k] = v;
-    }
-  };
-  buildParamButtons("ctrl-horizontal", CFG.camera.horizontal, () => getCam().horizontal, v => { setCam("horizontal", v); });
-  buildParamButtons("ctrl-vertical",   CFG.camera.vertical,   () => getCam().vertical,   v => { setCam("vertical", v); });
-  buildParamButtons("ctrl-lens",       CFG.camera.lens,       () => getCam().lens,       v => { setCam("lens", v); });
-  buildParamButtons("ctrl-shotscale",  CFG.camera.shotScale,  () => getCam().shotScale,  v => { setCam("shotScale", v); });
-}
-
-function buildObjControls(){
-  const obj = currentObj(), box = $("obj-controls");
-  if (!obj){ box.style.display = "none"; return; }
-  box.style.display = "";
-  const def = CFG.objects.find(o => o.id === obj.type);
-  $("obj-ctrl-title").textContent = def ? def.label : obj.type;
-  document.querySelectorAll("#ctrl-position button").forEach(b => {
-    b.classList.toggle("active", b.dataset.pos === obj.position);
-    b.onclick = () => { obj.position = b.dataset.pos; refreshAll(); };
-  });
-  const set = k => v => { if (currentObj()) currentObj()[k] = v; };
-  buildParamButtons("ctrl-scale", CFG.scale, () => currentObj()?.scale, set("scale"));
-  buildParamButtons("ctrl-orientation",
-    (def?.orientations || ["front","back","left","right"]).map(id => ({ id, label: CFG.orientationLabels[id] || id })),
-    () => currentObj()?.orientation, set("orientation"));
-  const isChar = def?.category === "character";
-  $("char-controls").style.display = isChar ? "" : "none";
-  if (isChar){
-    const opts = (list, labels) => (list || []).map(id => ({ id, label: labels[id] || id }));
-    buildParamButtons("ctrl-pose", opts(def.poses, CFG.poseLabels), () => currentObj()?.pose, set("pose"));
-    buildParamButtons("ctrl-arms", opts(def.arms, CFG.armLabels), () => currentObj()?.arms, set("arms"));
-    buildParamButtons("ctrl-expression", opts(def.expressions, CFG.expressionLabels), () => currentObj()?.expression, set("expression"));
-  }
-}
-
-function buildObjList(){
-  const shot = currentShot(), list = $("obj-list");
-  list.innerHTML = "";
-  if (!shot || !shot.objects.length){
-    list.innerHTML = `<div class="empty-hint">Nothing in this shot yet.<br>Use <b>+ Add Object</b> below.</div>`;
-    $("btn-add-obj").disabled = false; return;
-  }
-  const lbl = (arr, id) => (arr.find(x => x.id === id) || {}).label || "—";
-  shot.objects.forEach((obj, i) => {
-    const def = CFG.objects.find(o => o.id === obj.type);
-    const zOrder = shot.objects.length - i; // last object = 1 (foremost), first = highest number (backmost)
-    const item = document.createElement("div");
-    item.className = "obj-item" + (state.selectedObj === i ? " active" : "");
-    item.innerHTML = `
-      <div class="obj-item-dot" style="background:${(def && def.color) || "#8B93A3"}"></div>
-      <div class="obj-item-info">
-        <div class="obj-item-name">${def ? def.label : obj.type}</div>
-        <div class="obj-item-meta">Layer ${zOrder} · ${(obj.position || "").replace("-", " ")} · ${lbl(CFG.scale, obj.scale)}</div>
-      </div>
-      <button class="obj-item-del" title="Remove">×</button>`;
-    item.querySelector(".obj-item-del").addEventListener("click", e => {
-      e.stopPropagation(); shot.objects.splice(i, 1);
-      state.selectedObj = shot.objects.length ? Math.min(state.selectedObj ?? 0, shot.objects.length - 1) : null;
-      refreshAll();
-    });
-    item.addEventListener("click", () => { state.selectedObj = i; refreshAll(); });
-    list.appendChild(item);
-  });
-  $("btn-add-obj").disabled = shot.objects.length >= 8;
-}
-
-function buildObjPicker(){
-  const picker = $("obj-picker"); picker.innerHTML = "";
-  CFG.objects.forEach(def => {
-    const item = document.createElement("div");
-    item.className = "obj-picker-item";
-    item.innerHTML = `<span>${def.label}</span><span class="obj-picker-cat">${def.category}</span>`;
-    item.addEventListener("click", () => { addObject(def); picker.style.display = "none"; });
-    picker.appendChild(item);
-  });
-}
-
-function addObject(def){
-  const shot = currentShot(); if (!shot || shot.objects.length >= 8) return;
-  // spread new objects across the floor so they never spawn glued together
-  const spots = ["center", "middle-left", "middle-right", "top-middle", "bottom-middle", "top-left", "top-right", "bottom-left"];
-  const o = { type: def.id, position: spots[shot.objects.length % spots.length], scale: "medium",
-              orientation: def.orientations?.[0] || "front",
-              camera: { horizontal: "center", vertical: "eye-level", lens: "normal", shotScale: "wide" } };
-  if (def.category === "character"){ o.pose = "standing"; o.arms = "both-down"; o.expression = "neutral"; }
-  shot.objects.push(o);
-  state.selectedObj = shot.objects.length - 1;
-  refreshAll();
-}
-
-// ── TIMELINE ────────────────────────────────────────────────
-function buildTimeline(){
-  const strip = $("timeline-strip"); strip.innerHTML = "";
-  state.shots.forEach((shot, i) => {
-    const wrap = document.createElement("div");
-    wrap.className = "shot-thumb" + (i === state.activeShot ? " active" : "");
-    wrap.innerHTML = `<canvas class="shot-thumb-canvas" width="240" height="135"></canvas>
-      <div class="shot-thumb-label">${shot.label || shotNumLabel(i)}</div>
-      <div class="shot-thumb-actions">
-        <button class="shot-thumb-btn" data-a="dup" title="Duplicate">⧉</button>
-        <button class="shot-thumb-btn" data-a="del" title="Delete">×</button>
-      </div>`;
-    const tc = wrap.querySelector("canvas");
-    render(tc.getContext("2d"), tc.width, tc.height, shot);
-    wrap.addEventListener("click", e => {
-      const a = e.target.closest("[data-a]")?.dataset.a;
-      if (a === "dup") return duplicateShot(i);
-      if (a === "del") return deleteShot(i);
-      state.activeShot = i; state.selectedObj = null; refreshAll();
-    });
-    strip.appendChild(wrap);
-  });
-}
-function newShot(){ state.shots.push(makeShot()); state.activeShot = state.shots.length - 1; state.selectedObj = null; refreshAll(); }
-function duplicateShot(i){
-  const c = JSON.parse(JSON.stringify(state.shots[i])); c.id = Date.now(); c.label = "";
-  state.shots.splice(i + 1, 0, c); state.activeShot = i + 1; state.selectedObj = null; refreshAll();
-}
-function deleteShot(i){
-  if (state.shots.length === 1) return;
-  state.shots.splice(i, 1);
-  state.activeShot = Math.min(state.activeShot, state.shots.length - 1); state.selectedObj = null; refreshAll();
-}
-
-// ── HEADER / INFO ───────────────────────────────────────────
-function updateShotLabel(){
-  const el = $("shot-label"), s = currentShot();
-  el.textContent = s.label || shotNumLabel(state.activeShot);
-  el.contentEditable = "true"; el.title = "Click to rename";
-  el.onblur = () => { s.label = el.textContent.trim(); refreshAll(); };
-  el.onkeydown = e => { if (e.key === "Enter"){ e.preventDefault(); el.blur(); } };
-  const c = s.camera, cf = CFG.camera, L = (a, id, f) => byId(a, id, f);
-  const h = L(cf.horizontal, c.horizontal, 2), v = L(cf.vertical, c.vertical, 2);
-  $("shot-info").textContent = [L(cf.shotScale, c.shotScale, 0).label, `${h.label} ${h.angle}°`, `${v.label} ${v.angle}°`, L(cf.lens, c.lens, 1).label].join("  ·  ");
-}
-
-function refreshAll(){
-  if (!currentShot()) return;
-  updateShotLabel(); buildCameraControls(); buildObjControls(); buildObjList(); buildTimeline(); 
-  $("btn-hide-below").classList.toggle("active", state.hideBelow);
-  redraw(); drawCamDiagram(); saveToStorage();
-}
-
-// ── EXPORT ──────────────────────────────────────────────────
-function download(href, name){ const a = document.createElement("a"); a.download = name; a.href = href; a.click(); }
-function exportPNG(){
-  const c = document.createElement("canvas"); c.width = 1920; c.height = 1080;
-  render(c.getContext("2d"), 1920, 1080, currentShot(), { label: currentShot().label || shotNumLabel(state.activeShot) });
-  download(c.toDataURL("image/png"), (currentShot().label || shotNumLabel(state.activeShot)) + ".png");
-}
-function exportSheet(){
-  const cols = Math.min(state.shots.length, 3), rows = Math.ceil(state.shots.length / cols);
-  const sw = 640, sh = 360, pad = 24, lh = 28;
-  const ec = document.createElement("canvas");
-  ec.width = cols * (sw + pad) + pad; ec.height = rows * (sh + lh + pad) + pad;
-  const g = ec.getContext("2d"); g.fillStyle = "#F4F2EC"; g.fillRect(0, 0, ec.width, ec.height);
-  state.shots.forEach((shot, i) => {
-    const x = pad + (i % cols) * (sw + pad), y = pad + Math.floor(i / cols) * (sh + lh + pad);
-    g.save(); g.translate(x, y); g.beginPath(); g.rect(0, 0, sw, sh); g.clip();
-    render(g, sw, sh, shot); g.restore();
-    g.strokeStyle = INK; g.lineWidth = 1.5; g.strokeRect(x, y, sw, sh);
-    g.fillStyle = INK; g.font = "bold 13px 'DM Mono', monospace"; g.textAlign = "left";
-    g.fillText(shot.label || shotNumLabel(i), x, y + sh + 19);
-  });
-  download(ec.toDataURL("image/png"), "storyboard-sheet.png");
-}
-
-// ── EVENTS ──────────────────────────────────────────────────
-$("btn-toggle-grid").addEventListener("click", function(){ state.showGrid = !state.showGrid; this.classList.toggle("on", state.showGrid); redraw(); });
-$("btn-add-obj").addEventListener("click", () => { const p = $("obj-picker"); p.style.display = p.style.display === "none" ? "" : "none"; });
-document.addEventListener("click", e => { if (!e.target.closest(".add-obj-wrap")) $("obj-picker").style.display = "none"; });
-$("btn-save-shot").addEventListener("click", () => {
-  saveToStorage(); const b = $("btn-save-shot"); b.textContent = "Saved ✓"; setTimeout(() => b.textContent = "Save Shot", 1200);
+  [S.cam, S.obs] = keep; render();
+  download(c.toDataURL('image/png'), 'storyboard-sheet.png');
 });
-$("btn-new-shot").addEventListener("click", newShot);
-$("btn-hide-below").addEventListener("click", function(){
-  state.hideBelow = !state.hideBelow;
-  this.classList.toggle("active", state.hideBelow);
-  redraw();
-});
-$("btn-duplicate-shot").addEventListener("click", () => duplicateShot(state.activeShot));
-$("btn-export-png").addEventListener("click", exportPNG);
-$("btn-export-sheet").addEventListener("click", exportSheet);
 
-// ── INIT ────────────────────────────────────────────────────
-loadFromStorage();
-if (!state.shots.length){ state.shots.push(makeShot()); state.activeShot = 0; }
-state.activeShot = Math.min(state.activeShot ?? 0, state.shots.length - 1);
-buildObjPicker(); sizeCanvas(); refreshAll();
+/* ---------- boot ---------- */
+(async function init() {
+  try { CFG = await (await fetch('config.json')).json(); }
+  catch (err) { document.body.insertAdjacentHTML('beforeend', '<div class="fatal">Could not load config.json. Open this page through GitHub Pages or a local web server (not by double-clicking the file).</div>'); return; }
+  OBJ = Object.fromEntries(CFG.objects.map(o => [o.id, o]));
+  buildCam(); renderTl(); renderList(); go(0);
+})();
