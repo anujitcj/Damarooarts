@@ -57,24 +57,108 @@
 
   <!-- PROJECTS -->
   <section class="view" id="view-projects" role="tabpanel" aria-labelledby="tab-projects">
-    <div class="proj">
+    <div class="proj" id="projects-home">
       <div class="proj-head">
-        <h2>Projects</h2>
-        <p>Everything currently in production.</p>
-      </div>
-      <div class="proj-stage">
-        <button class="clap" id="clap" type="button" aria-label="We Before Me, project under construction">
-          <span class="clap-arm"></span>
-          <span class="clap-fixed"></span>
-          <span class="clap-body"><span class="clap-title">We Before Me</span></span>
-        </button>
-        <div class="build">
-          <svg class="gears" viewBox="0 0 250 200" role="img" aria-label="Turning gears">
-            <g class="g1" id="gear-big"></g>
-            <g class="g2" id="gear-small"></g>
-          </svg>
-          <p class="tape"><span>Under construction</span></p>
+        <div>
+          <p class="proj-kicker">Projects</p>
+          <h2>In production.</h2>
+          <p>Everything currently in production.</p>
         </div>
+        <span class="proj-count">01 ACTIVE PROJECT</span>
+      </div>
+
+      <div class="project-card-wrap">
+        <button class="project-card" id="open-wbm" type="button" aria-label="Open We Before Me project">
+          <div class="project-card-main">
+            <span class="project-status">PRE-PRODUCTION</span>
+            <h3>We Before Me</h3>
+            <p>Private production workspace for the film.</p>
+            <span class="project-open">Open project <b>↗</b></span>
+          </div>
+          <div class="project-card-side">
+            <div class="project-mark">W<span>·</span>BM</div>
+            <div class="project-meta">
+              <span>Script</span>
+              <span>Discussion</span>
+              <span>Update log</span>
+            </div>
+          </div>
+        </button>
+      </div>
+
+      <div class="proj-footnote">
+        <span class="foot-rule"></span>
+        <span>DMAROO ARTS · PRODUCTION</span>
+      </div>
+    </div>
+
+    <div class="project-detail" id="wbm-detail" hidden>
+      <div class="detail-top">
+        <button class="back-projects" id="back-projects" type="button">← Projects</button>
+        <span class="detail-code">PROJECT 001 · PRIVATE</span>
+      </div>
+
+      <div class="detail-heading">
+        <div>
+          <span class="project-status">PRE-PRODUCTION</span>
+          <h2>We Before Me</h2>
+          <p>Production workspace. Script, discussion and update history.</p>
+        </div>
+        <div class="detail-lock">
+          <span class="lock-dot"></span>
+          AUTHORISED USERS ONLY
+        </div>
+      </div>
+
+      <div class="detail-grid">
+        <section class="script-panel">
+          <div class="panel-head">
+            <div>
+              <span class="panel-kicker">01 · SCRIPT</span>
+              <h3>Screenplay</h3>
+            </div>
+            <span class="private-badge">PRIVATE</span>
+          </div>
+
+          <div class="script-reader" id="script-reader">
+            <div class="script-empty">
+              <div class="script-icon">S</div>
+              <h4>Script access</h4>
+              <p>The production script will appear here for authorised readers. Downloading the source Word file is disabled.</p>
+              <span class="reader-note">PRIVATE DOCUMENT · READ ONLY</span>
+            </div>
+          </div>
+        </section>
+
+        <aside class="project-sidebar">
+          <section class="side-panel">
+            <div class="panel-head compact">
+              <div>
+                <span class="panel-kicker">02 · DISCUSSION</span>
+                <h3>Production notes</h3>
+              </div>
+              <span class="comment-count">0</span>
+            </div>
+            <div class="discussion-empty">
+              <span class="discussion-mark">+</span>
+              <p>Comments anchored to the script will appear here.</p>
+              <span>AUTHOR · COMMENT · LOCATION · TIME</span>
+            </div>
+          </section>
+
+          <section class="side-panel">
+            <div class="panel-head compact">
+              <div>
+                <span class="panel-kicker">03 · UPDATE LOG</span>
+                <h3>Script history</h3>
+              </div>
+            </div>
+            <div class="log-empty">
+              <span>No script updates yet.</span>
+              <small>Version history will be visible to authorised users.</small>
+            </div>
+          </section>
+        </aside>
       </div>
     </div>
   </section>

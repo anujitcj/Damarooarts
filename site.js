@@ -90,29 +90,29 @@ function heroRun(on) {
   else if (!on) running = false;
 }
 
-/* ---------- projects: meshing gears ---------- */
-function gearPath(cx, cy, N, Rp, phase, hole) {
-  const rt = Rp + 6, rr = Rp - 8, p = 2 * Math.PI / N, a1 = p * .3, a2 = p * .15, P = (a, r) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
-  const teeth = Array.from({ length: N }, (_, i) => { const c = phase + i * p; return [P(c - a1, rr), P(c - a2, rt), P(c + a2, rt), P(c + a1, rr)]; });
-  let d = '';
-  teeth.forEach((t, i) => { const nx = teeth[(i + 1) % N][0];
-    d += `${i ? 'L' : 'M'}${t[0]}L${t[1]}L${t[2]}L${t[3]}A${rr} ${rr} 0 0 1 ${nx}`; });
-  return d + `Z M${cx + hole} ${cy}A${hole} ${hole} 0 1 0 ${cx - hole} ${cy}A${hole} ${hole} 0 1 0 ${cx + hole} ${cy}Z`;
-}
-function buildGear(id, cx, cy, N, Rp, phase, fill, hub) {
-  $(id).innerHTML = `<path d="${gearPath(cx, cy, N, Rp, phase, Rp * .22)}" fill="${fill}" fill-rule="evenodd"/>
-    <circle cx="${cx}" cy="${cy}" r="${Rp * .62}" fill="none" stroke="${hub}" stroke-width="2" opacity=".55"/>`;
-}
-buildGear('#gear-big', 78, 100, 12, 60, 0, '#FF5A00', '#fff');              // tooth points at the small gear
-buildGear('#gear-small', 178, 100, 8, 40, Math.PI / 8, '#14110F', '#fff');   // gap faces the big gear so they mesh
+/* ---------- projects: project workspace ---------- */
+const projectsHome = $('#projects-home');
+const wbmDetail = $('#wbm-detail');
+const openWbm = $('#open-wbm');
+const backProjects = $('#back-projects');
 
-/* ---------- projects: clapperboard ---------- */
-const clap = $('#clap'), gears = () => $$('.g1,.g2').map(e => e.getAnimations()[0]).filter(Boolean);
-clap.addEventListener('click', () => {
-  clap.classList.remove('hit'); void clap.offsetWidth; clap.classList.add('hit');
-  gears().forEach(a => a.updatePlaybackRate(9));
-  setTimeout(() => gears().forEach(a => a.updatePlaybackRate(1)), 1500);
-});
+function openProject() {
+  projectsHome.hidden = true;
+  wbmDetail.hidden = false;
+  wbmDetail.scrollTop = 0;
+  wbmDetail.classList.remove('detail-play');
+  void wbmDetail.offsetWidth;
+  wbmDetail.classList.add('detail-play');
+}
+
+function closeProject() {
+  wbmDetail.hidden = true;
+  projectsHome.hidden = false;
+  replay(projectsHome);
+}
+
+openWbm.addEventListener('click', openProject);
+backProjects.addEventListener('click', closeProject);
 
 /* ---------- boot ---------- */
 const start = location.hash.slice(1);
