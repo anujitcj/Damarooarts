@@ -3,106 +3,85 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#FF5A00" />
 <title>Damaroo Arts</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: monospace, system-ui; background: #F6F4EF; color: #1A1A1A; }
-
-  .site-header {
-    background: #1A1A1A;
-    padding: 0 28px;
-    display: flex;
-    align-items: center;
-    gap: 40px;
-    height: 48px;
-  }
-
-  .site-title {
-    font-size: 13px;
-    font-weight: 500;
-    letter-spacing: 0.2em;
-    color: #F6F4EF;
-    flex-shrink: 0;
-  }
-
-  .site-nav { display: flex; gap: 4px; }
-
-  .nav-tab {
-    font-family: monospace;
-    font-size: 11px;
-    letter-spacing: 0.06em;
-    padding: 6px 16px;
-    border-radius: 3px;
-    border: 1px solid transparent;
-    background: transparent;
-    color: #9CA3AF;
-    cursor: pointer;
-    transition: color .15s, background .15s, border-color .15s;
-  }
-  .nav-tab:hover { color: #F6F4EF; }
-  .nav-tab.active { color: #F6F4EF; background: #374151; border-color: #4B5563; }
-
-  .tab-content { display: none; }
-  .tab-content.active { display: block; }
-
-  .home-page {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: calc(100vh - 48px);
-    color: #8A8580;
-    font-family: monospace;
-    font-size: 13px;
-    letter-spacing: 0.06em;
-  }
-
-  #tab-storyboard { height: calc(100vh - 48px); }
-
-  iframe {
-    width: 100%;
-    height: 100%;
-    border: none;
-    display: block;
-  }
-</style>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23FF5A00'/%3E%3Ccircle cx='16' cy='16' r='7' fill='white'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="site.css" />
 </head>
-<body>
+<body data-tab="home">
 
 <header class="site-header">
-  <div class="site-title">DAMAROO ARTS</div>
-  <nav class="site-nav">
-    <button class="nav-tab active" data-tab="home">Home</button>
-    <button class="nav-tab" data-tab="storyboard">Storyboard Simulator</button>
+  <a class="mark" href="#home" data-tab="home" aria-label="Damaroo Arts, home"><span class="mark-dot"></span>DAMAROO ARTS</a>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <span class="tab-ink" aria-hidden="true"></span>
+    <button class="tab" role="tab" id="tab-home" data-tab="home" aria-selected="true" aria-controls="view-home">Home</button>
+    <button class="tab" role="tab" id="tab-tool" data-tab="tool" aria-selected="false" aria-controls="view-tool" tabindex="-1">Storyboard<span class="tab-long">&nbsp;Simulator</span></button>
+    <button class="tab" role="tab" id="tab-projects" data-tab="projects" aria-selected="false" aria-controls="view-projects" tabindex="-1">Projects</button>
   </nav>
+  <span></span>
 </header>
 
-<div id="tab-home" class="tab-content active">
-  <div class="home-page">— coming soon —</div>
+<div class="stage-wrap">
+
+  <!-- HOME -->
+  <section class="view active" id="view-home" role="tabpanel" aria-labelledby="tab-home">
+    <div class="hero" id="hero">
+      <div class="beam"></div>
+      <canvas id="dust"></canvas>
+      <div class="glow"></div>
+      <div class="vignette"></div>
+      <div class="grain"></div>
+      <div class="bar bar-top"></div><div class="bar bar-bot"></div>
+      <div class="frame"><i></i><i></i><i></i><i></i></div>
+
+      <div class="center">
+        <h1 class="title"><span class="sr">Damaroo Arts</span>
+          <span class="line l1" data-t="DAMAROO" aria-hidden="true"></span>
+          <span class="line l2" data-t="ARTS" aria-hidden="true"></span>
+        </h1>
+        <p class="soon"><span class="rule"></span><span class="soon-text">Coming soon</span><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="rule"></span></p>
+      </div>
+
+      <div class="tc" aria-hidden="true"><span class="rec"></span><span id="tc">00:00:00:00</span></div>
+    </div>
+  </section>
+
+  <!-- STORYBOARD TOOL -->
+  <section class="view" id="view-tool" role="tabpanel" aria-labelledby="tab-tool">
+    <div class="tool-load" id="tool-load"><span></span></div>
+    <iframe id="sb-frame" src="about:blank" title="Storyboard Simulator"></iframe>
+  </section>
+
+  <!-- PROJECTS -->
+  <section class="view" id="view-projects" role="tabpanel" aria-labelledby="tab-projects">
+    <div class="proj">
+      <div class="proj-head">
+        <h2>Projects</h2>
+        <p>Everything currently in production.</p>
+      </div>
+      <div class="proj-stage">
+        <button class="clap" id="clap" type="button" aria-label="We Before Me, project under construction">
+          <span class="clap-arm"></span>
+          <span class="clap-fixed"></span>
+          <span class="clap-body"><span class="clap-title">We Before Me</span></span>
+        </button>
+        <div class="build">
+          <svg class="gears" viewBox="0 0 250 200" role="img" aria-label="Turning gears">
+            <g class="g1" id="gear-big"></g>
+            <g class="g2" id="gear-small"></g>
+          </svg>
+          <p class="tape"><span>Under construction</span></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="wipe" aria-hidden="true"></div>
 </div>
 
-<div id="tab-storyboard" class="tab-content">
-  <iframe id="sb-frame" src="" title="Storyboard Simulator"></iframe>
-</div>
-
-<script>
-  const tabs = document.querySelectorAll(".nav-tab");
-  const contents = document.querySelectorAll(".tab-content");
-  let sbLoaded = false;
-
-  tabs.forEach(tab => {
-    tab.addEventListener("click", () => {
-      tabs.forEach(t => t.classList.remove("active"));
-      contents.forEach(c => c.classList.remove("active"));
-      tab.classList.add("active");
-      document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
-
-      if (tab.dataset.tab === "storyboard" && !sbLoaded){
-        document.getElementById("sb-frame").src = "storyboard.html";
-        sbLoaded = true;
-      }
-    });
-  });
-</script>
-
+<script src="site.js"></script>
 </body>
 </html>
