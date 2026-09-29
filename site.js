@@ -147,7 +147,12 @@ function show(tab) {
   heroRun(tab === 'home');
 }
 async function go(tab, push = true) {
-  if (!availableTabs().includes(tab) || tab === cur || busy) return;
+  if (!availableTabs().includes(tab) || busy) return;
+  if (tab === 'projects' && document.body.classList.contains('project-open')) {
+    closeProject(push);
+    return;
+  }
+  if (tab === cur && !document.body.classList.contains('project-open')) return;
   if (push) { try { history.pushState(null, '', '#' + tab); } catch {} }
   if (reduce || cur === null) { show(tab); return; }
   busy = true;
@@ -171,7 +176,7 @@ $('.tabs').addEventListener('keydown', e => {
   go(n);
   $(`#tab-${n}`)?.focus();
 });
-addEventListener('popstate', () => go(location.hash.slice(1) || 'home', false));
+addEventListener('popstate', () => handleRoute(false));
 
 $$('.line').forEach(l => { l.innerHTML = [...l.dataset.t].map((c, i) => `<span class="ch" style="--i:${i}">${c}</span>`).join(''); });
 const hero = $('#hero'), glow = $('.glow'), title = $('.title'), dust = $('#dust'), dx = dust.getContext('2d'), tcEl = $('#tc');
@@ -199,10 +204,13 @@ const wbmDetail = $('#wbm-detail');
 const openWbm = $('#open-wbm');
 const backProjects = $('#back-projects');
 
-async function openProject() {
+async function openProject(push = true) {
+  if (push) { try { history.pushState(null, '', '#projects/we-before-me'); } catch {} }
+  show('projects');
+  document.body.classList.add('project-open');
   projectsHome.hidden = true;
   wbmDetail.hidden = false;
-  wbmDetail.scrollTop = 0;
+  $('#view-projects').scrollTop = 0;
   replay(wbmDetail);
   await loadProject();
 }
@@ -518,8 +526,27 @@ async function loadAdminLogs() {
 
 function escapeHtml(value) { return String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;'); }
 function showToast(message) { const toast=$('#toast'); toast.textContent=message; toast.hidden=false; clearTimeout(showToast.timer); showToast.timer=setTimeout(()=>toast.hidden=true,3200); }
-function closeProject() { wbmDetail.hidden=true; projectsHome.hidden=false; replay(projectsHome); }
-openWbm.addEventListener('click', openProject); backProjects.addEventListener('click', closeProject);
+function closeProject(push = true) {
+  document.body.classList.remove('project-open');
+  wbmDetail.hidden = true;
+  projectsHome.hidden = false;
+  replay(projectsHome);
+  if (push) { try { history.pushState(null, '', '#projects'); } catch {} }
+  show('projects');
+}
+function handleRoute(pushFallback = true) {
+  const route = location.hash.slice(1) || 'home';
+  if (route === 'projects/we-before-me') {
+    if (cur !== 'projects') show('projects');
+    if (!document.body.classList.contains('project-open')) openProject(false);
+    return;
+  }
+  const tab = availableTabs().includes(route) ? route : 'home';
+  if (document.body.classList.contains('project-open')) closeProject(false);
+  if (tab !== cur) go(tab, false);
+}
+openWbm.addEventListener('click', () => openProject(true));
+backProjects.addEventListener('click', () => closeProject(true));
 
 authGate.hidden = false;
 async function boot() {
@@ -530,8 +557,7 @@ async function boot() {
       window.DamarooArts.bootResult = 'denied';
       return;
     }
-    const start = location.hash.slice(1);
-    show(availableTabs().includes(start) ? start : 'home');
+    handleRoute(false);
     window.DamarooArts.bootResult = 'ready';
   } catch (error) {
     window.DamarooArts.bootResult = 'error';
