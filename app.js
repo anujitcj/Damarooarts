@@ -10,7 +10,7 @@ const D2R = Math.PI / 180;
 const INK = "#22252B", ACCENT = "#F5B301";
 
 // ── STATE ───────────────────────────────────────────────────
-let state = { showGrid: false, activeShot: null, selectedObj: null, shots: [] };
+let state = { showGrid: false, activeShot: null, selectedObj: null, shots: [], hideBelow: false, dragging: null, dragMode: null };
 
 function loadFromStorage(){
   try {
@@ -46,20 +46,22 @@ function bbox(pts){
 
 // ── SCENE LAYOUT ────────────────────────────────────────────
 // Grid position = spot on the FLOOR (left/right, far/near).
-// Depth layer = which slice of the room (back / mid / front). Different z => no gluing.
+// Z-index (array order) determines depth: last object in array is foremost.
+// Older objects = farther back, newer objects = closer to camera.
 const GRID_POS = {
   "top-left":[0,0], "top-middle":[1,0], "top-right":[2,0],
   "middle-left":[0,1], "center":[1,1], "middle-right":[2,1],
   "bottom-left":[0,2], "bottom-middle":[1,2], "bottom-right":[2,2]
 };
 const COLX = [-2.6, 0, 2.6], ROWZ = [-1.4, 0, 1.4];
-const DEPTH_Z = { background: -4.5, midground: 0, foreground: 3.5 };
 // Which way an object FACES (yaw about the vertical axis). "right" faces screen-right.
 const ORI = { front:0, right:90, back:180, left:-90, "three-quarter-right":45, "three-quarter-left":-45 };
 
-function place(o){
+function place(o, idx, total){
   const [c, r] = GRID_POS[o.position] || [1, 1];
-  return [COLX[c], 0, (DEPTH_Z[o.depth] ?? 0) + ROWZ[r]];
+  // Newer objects (higher idx) are closer; layer spacing = 0.6 per object
+  const layerZ = (idx - total + 1) * 0.6;
+  return [COLX[c], 0, ROWZ[r] + layerZ];
 }
 
 // ── 3D MODELS ───────────────────────────────────────────────
@@ -116,16 +118,16 @@ function charRig(pose, arms, woman){
   return { segs, head, skirt, fwd: P.fwd, up: P.up, hip };
 }
 
-function buildModel(o){
+function buildModel(o, idx, shot){
   const def = CFG.objects.find(x => x.id === o.type) || {};
   const k = (CFG.scale.find(s => s.id === o.scale)?.factor ?? .85) / .85;
-  const yaw = (ORI[o.orientation] ?? 0) * D2R, cs = Math.cos(yaw), sn = Math.sin(yaw), pos = place(o);
+  const yaw = (ORI[o.orientation] ?? 0) * D2R, cs = Math.cos(yaw), sn = Math.sin(yaw), pos = place(o, idx, shot.objects.length);
   const R = v => [v[0]*cs + v[2]*sn, v[1], -v[0]*sn + v[2]*cs];
   const T = p => { const q = R(mul(p, k)); return [pos[0] + q[0], q[1], pos[2] + q[2]]; };
 
   if (def.category === "character"){
     const rig = charRig(o.pose || "standing", o.arms || "both-down", def.id === "woman");
-    const m = { kind: "char", color: def.color || "#3B82C4", pos, expr: o.expression || "neutral",
+    const m = { kind: "char", color: def.color || "#3B82C4", pos, expr: o.expression || "neutral", idx,
       segs: rig.segs.map(s => [T(s[0]), T(s[1])]), skirt: rig.skirt && rig.skirt.map(T),
       headC: T(rig.head), headR: .11 * k, fwd: R(rig.fwd), up: R(rig.up), hipW: T(rig.hip) };
     m.pts = m.segs.flat().concat([add(m.headC, [0, m.headR, 0]), add(m.headC, [0, -m.headR, 0])]);
@@ -135,7 +137,7 @@ function buildModel(o){
   const faces = (PARTS[o.type] || [[0,.3,0,.6,.6,.6,"#DDD"]]).flatMap(boxFaces)
     .map(f => ({ n: R(f.n), q: f.q.map(T), color: f.color }));
   const pts = faces.flatMap(f => f.q);
-  return { kind: "obj", faces, pts, bb: bbox(pts), pos };
+  return { kind: "obj", faces, pts, bb: bbox(pts), pos, idx };
 }
 
 // ── CAMERA ──────────────────────────────────────────────────
@@ -143,11 +145,16 @@ function buildModel(o){
 // Shot scale frames the subject: Wide = whole scene / full body,
 // Medium = waist-up, Close = the face.
 function makeCam(shot, models, W, H, sel){
-  const c = shot.camera, cfg = CFG.camera;
-  const az = byId(cfg.horizontal, c.horizontal, 2).angle * D2R;
-  const pt = byId(cfg.vertical, c.vertical, 2).angle * D2R;
-  const fov = 40 * D2R * byId(cfg.lens, c.lens, 1).fov;
-  const fr = byId(cfg.shotScale, c.shotScale, 0).id;
+  // If an object is selected, use its per-object camera. Otherwise use global shot camera.
+  let useCam;
+  if (sel != null && models[sel]?.cam){ useCam = models[sel].cam; }
+  else { useCam = shot.camera; }
+  
+  const cfg = CFG.camera;
+  const az = byId(cfg.horizontal, useCam.horizontal, 2).angle * D2R;
+  const pt = byId(cfg.vertical, useCam.vertical, 2).angle * D2R;
+  const fov = 40 * D2R * byId(cfg.lens, useCam.lens, 1).fov;
+  const fr = byId(cfg.shotScale, useCam.shotScale, 0).id;
   const asp = W / H, bb = bbox(models.flatMap(m => m.pts));
   const hero = models[sel] ?? models.find(m => m.kind === "char") ?? models[0];
   let tgt, vis;
@@ -192,7 +199,7 @@ function render(g, W, H, shot, opt = {}){
     g.fillStyle = "#B5B8BF"; g.font = `${Math.max(11, W * .02)}px 'DM Mono', monospace`; g.textAlign = "center";
     g.fillText("Add objects to compose the frame", W / 2, H / 2); g.restore(); return;
   }
-  const models = shot.objects.map(buildModel);
+  const models = shot.objects.map((o, i) => buildModel(o, i, shot));
   const cam = makeCam(shot, models, W, H, opt.sel);
 
   // floor grid (skipped when the camera is below the floor)
@@ -210,7 +217,13 @@ function render(g, W, H, shot, opt = {}){
     if (ring.every(Boolean)){ polyPath(g, ring); g.strokeStyle = ACCENT; g.lineWidth = Math.max(1.5, W / 420); g.setLineDash([6, 5]); g.stroke(); g.setLineDash([]); }
   }
   // far -> near
-  [...models].sort((a, b) => cam.depth(b.bb.c) - cam.depth(a.bb.c)).forEach(m => m.kind === "char" ? drawChar(g, m, cam) : drawObj(g, m, cam));
+  const sorted = [...models].sort((a, b) => cam.depth(b.bb.c) - cam.depth(a.bb.c));
+  const hideThreshold = state.hideBelow && opt.sel != null ? opt.sel : -1;
+  sorted.forEach(m => {
+    // If hideBelow is on and this object is behind the selected one, skip it
+    if (hideThreshold >= 0 && m.idx < hideThreshold) return;
+    m.kind === "char" ? drawChar(g, m, cam) : drawObj(g, m, cam);
+  });
 
   if (opt.grid){
     g.strokeStyle = "rgba(185,28,28,.35)"; g.lineWidth = 1; g.setLineDash([5, 5]);
@@ -294,6 +307,43 @@ function redraw(){
 }
 window.addEventListener("resize", sizeCanvas);
 
+// ── MOUSE INTERACTIONS ──────────────────────────────────────
+canvas.addEventListener("mousedown", e => {
+  if (state.selectedObj === null) return;
+  const obj = currentObj(); if (!obj) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  state.dragging = { mx, my, mode: e.ctrlKey ? "camera" : "move" };
+  state.dragMode = state.dragging.mode;
+});
+document.addEventListener("mousemove", e => {
+  if (!state.dragging) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const dx = mx - state.dragging.mx, dy = my - state.dragging.my;
+  const obj = currentObj(); if (!obj) { state.dragging = null; return; }
+  
+  if (state.dragMode === "move"){
+    // Determine which quadrant the mouse is in (relative to canvas center)
+    const cx = canvas.width / 2, cy = canvas.height / 2;
+    const quad = mx > cx ? (my > cy ? "bottom-right" : "top-right") : (my > cy ? "bottom-left" : "top-left");
+    obj.position = quad;
+    redraw();
+  } else if (state.dragMode === "camera"){
+    // Ctrl+drag rotates the camera (selected object's camera)
+    if (!obj.camera) obj.camera = { horizontal: "center", vertical: "eye-level", lens: "normal", shotScale: "wide" };
+    const hOpts = CFG.camera.horizontal, vOpts = CFG.camera.vertical;
+    const hi = Math.max(0, Math.min(hOpts.length - 1, hOpts.findIndex(o => o.id === obj.camera.horizontal) + Math.sign(dx) * 0.5));
+    const vi = Math.max(0, Math.min(vOpts.length - 1, vOpts.findIndex(o => o.id === obj.camera.vertical) + Math.sign(dy) * 0.5));
+    obj.camera.horizontal = hOpts[Math.round(hi)].id;
+    obj.camera.vertical = vOpts[Math.round(vi)].id;
+    redraw();
+  }
+  state.dragging.mx = mx; state.dragging.my = my;
+});
+document.addEventListener("mouseup", () => { state.dragging = null; state.dragMode = null; });
+
+
 // ── CAMERA DIAGRAM (top view + side view) ───────────────────
 function drawCamDiagram(){
   const c = $("cam-diagram-canvas"), g = c.getContext("2d"), W = c.width, H = c.height;
@@ -330,12 +380,25 @@ function buildParamButtons(containerId, items, getter, setter){
 }
 
 function buildCameraControls(){
-  const cam = () => currentShot().camera;
   if (!currentShot()) return;
-  buildParamButtons("ctrl-horizontal", CFG.camera.horizontal, () => cam().horizontal, v => cam().horizontal = v);
-  buildParamButtons("ctrl-vertical",   CFG.camera.vertical,   () => cam().vertical,   v => cam().vertical = v);
-  buildParamButtons("ctrl-lens",       CFG.camera.lens,       () => cam().lens,       v => cam().lens = v);
-  buildParamButtons("ctrl-shotscale",  CFG.camera.shotScale,  () => cam().shotScale,  v => cam().shotScale = v);
+  const getCam = () => {
+    // If an object is selected, use its per-object camera
+    if (state.selectedObj != null && currentObj()?.camera) return currentObj().camera;
+    // Otherwise use the global shot camera
+    return currentShot().camera;
+  };
+  const setCam = (k, v) => {
+    if (state.selectedObj != null && currentObj()){
+      if (!currentObj().camera) currentObj().camera = { horizontal: "center", vertical: "eye-level", lens: "normal", shotScale: "wide" };
+      currentObj().camera[k] = v;
+    } else {
+      currentShot().camera[k] = v;
+    }
+  };
+  buildParamButtons("ctrl-horizontal", CFG.camera.horizontal, () => getCam().horizontal, v => { setCam("horizontal", v); });
+  buildParamButtons("ctrl-vertical",   CFG.camera.vertical,   () => getCam().vertical,   v => { setCam("vertical", v); });
+  buildParamButtons("ctrl-lens",       CFG.camera.lens,       () => getCam().lens,       v => { setCam("lens", v); });
+  buildParamButtons("ctrl-shotscale",  CFG.camera.shotScale,  () => getCam().shotScale,  v => { setCam("shotScale", v); });
 }
 
 function buildObjControls(){
@@ -349,7 +412,6 @@ function buildObjControls(){
     b.onclick = () => { obj.position = b.dataset.pos; refreshAll(); };
   });
   const set = k => v => { if (currentObj()) currentObj()[k] = v; };
-  buildParamButtons("ctrl-depth", CFG.depth, () => currentObj()?.depth, set("depth"));
   buildParamButtons("ctrl-scale", CFG.scale, () => currentObj()?.scale, set("scale"));
   buildParamButtons("ctrl-orientation",
     (def?.orientations || ["front","back","left","right"]).map(id => ({ id, label: CFG.orientationLabels[id] || id })),
@@ -374,13 +436,14 @@ function buildObjList(){
   const lbl = (arr, id) => (arr.find(x => x.id === id) || {}).label || "—";
   shot.objects.forEach((obj, i) => {
     const def = CFG.objects.find(o => o.id === obj.type);
+    const zOrder = shot.objects.length - i; // last object = 1 (foremost), first = highest number (backmost)
     const item = document.createElement("div");
     item.className = "obj-item" + (state.selectedObj === i ? " active" : "");
     item.innerHTML = `
       <div class="obj-item-dot" style="background:${(def && def.color) || "#8B93A3"}"></div>
       <div class="obj-item-info">
         <div class="obj-item-name">${def ? def.label : obj.type}</div>
-        <div class="obj-item-meta">${lbl(CFG.depth, obj.depth)} · ${(obj.position || "").replace("-", " ")} · ${lbl(CFG.scale, obj.scale)}</div>
+        <div class="obj-item-meta">Layer ${zOrder} · ${(obj.position || "").replace("-", " ")} · ${lbl(CFG.scale, obj.scale)}</div>
       </div>
       <button class="obj-item-del" title="Remove">×</button>`;
     item.querySelector(".obj-item-del").addEventListener("click", e => {
@@ -409,8 +472,9 @@ function addObject(def){
   const shot = currentShot(); if (!shot || shot.objects.length >= 8) return;
   // spread new objects across the floor so they never spawn glued together
   const spots = ["center", "middle-left", "middle-right", "top-middle", "bottom-middle", "top-left", "top-right", "bottom-left"];
-  const o = { type: def.id, position: spots[shot.objects.length % spots.length], depth: "midground", scale: "medium",
-              orientation: def.orientations?.[0] || "front" };
+  const o = { type: def.id, position: spots[shot.objects.length % spots.length], scale: "medium",
+              orientation: def.orientations?.[0] || "front",
+              camera: { horizontal: "center", vertical: "eye-level", lens: "normal", shotScale: "wide" } };
   if (def.category === "character"){ o.pose = "standing"; o.arms = "both-down"; o.expression = "neutral"; }
   shot.objects.push(o);
   state.selectedObj = shot.objects.length - 1;
@@ -465,7 +529,9 @@ function updateShotLabel(){
 
 function refreshAll(){
   if (!currentShot()) return;
-  updateShotLabel(); buildCameraControls(); buildObjControls(); buildObjList(); buildTimeline(); redraw(); drawCamDiagram(); saveToStorage();
+  updateShotLabel(); buildCameraControls(); buildObjControls(); buildObjList(); buildTimeline(); 
+  $("btn-hide-below").classList.toggle("active", state.hideBelow);
+  redraw(); drawCamDiagram(); saveToStorage();
 }
 
 // ── EXPORT ──────────────────────────────────────────────────
@@ -500,6 +566,11 @@ $("btn-save-shot").addEventListener("click", () => {
   saveToStorage(); const b = $("btn-save-shot"); b.textContent = "Saved ✓"; setTimeout(() => b.textContent = "Save Shot", 1200);
 });
 $("btn-new-shot").addEventListener("click", newShot);
+$("btn-hide-below").addEventListener("click", function(){
+  state.hideBelow = !state.hideBelow;
+  this.classList.toggle("active", state.hideBelow);
+  redraw();
+});
 $("btn-duplicate-shot").addEventListener("click", () => duplicateShot(state.activeShot));
 $("btn-export-png").addEventListener("click", exportPNG);
 $("btn-export-sheet").addEventListener("click", exportSheet);

@@ -35,11 +35,9 @@
     <section class="ctrl-section" id="obj-controls" style="display:none;">
       <div class="ctrl-section-title" id="obj-ctrl-title">Object</div>
       <div class="ctrl-group">
-        <div class="ctrl-label">Depth layer</div><div class="btn-row" id="ctrl-depth"></div>
-      </div>
-      <div class="ctrl-group">
-        <div class="ctrl-label">Floor position (top = far, bottom = near)</div>
-        <div class="grid-picker" id="ctrl-position">
+        <div class="ctrl-label">Position on floor</div>
+        <div class="ctrl-hint">Drag the object on the frame to move it, or click here.</div>
+        <div class="grid-picker" id="ctrl-position" style="margin-top:8px;">
           <button data-pos="top-left">TL</button><button data-pos="top-middle">T</button><button data-pos="top-right">TR</button>
           <button data-pos="middle-left">L</button><button data-pos="center">●</button><button data-pos="middle-right">R</button>
           <button data-pos="bottom-left">BL</button><button data-pos="bottom-middle">B</button><button data-pos="bottom-right">BR</button>
@@ -47,6 +45,11 @@
       </div>
       <div class="ctrl-group"><div class="ctrl-label">Size</div><div class="btn-row" id="ctrl-scale"></div></div>
       <div class="ctrl-group"><div class="ctrl-label">Facing</div><div class="btn-row flex-wrap" id="ctrl-orientation"></div></div>
+      <div class="ctrl-group" style="padding-top:10px;border-top:1px solid var(--line);">
+        <div class="ctrl-label">Layer visibility</div>
+        <button class="btn-layer-toggle" id="btn-hide-below" title="Hide objects behind the selected one (lower layer numbers)">Hide Behind</button>
+        <div class="ctrl-hint">Ctrl+drag on the frame to rotate the camera.</div>
+      </div>
       <div id="char-controls" style="display:none;">
         <div class="ctrl-group"><div class="ctrl-label">Pose</div><div class="btn-row flex-wrap" id="ctrl-pose"></div></div>
         <div class="ctrl-group"><div class="ctrl-label">Arms</div><div class="btn-row flex-wrap" id="ctrl-arms"></div></div>

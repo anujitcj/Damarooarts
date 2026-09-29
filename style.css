@@ -107,3 +107,6 @@ button{font-family:var(--sans);cursor:pointer;border:none;background:none;color:
 .obj-picker-cat{margin-left:auto;font:9px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
 .empty-hint{padding:22px 16px;font:11px var(--mono);color:var(--dim);text-align:center;line-height:1.7}
 .empty-hint b{color:var(--soft)}
+.btn-layer-toggle{width:100%;font:500 11px var(--mono);letter-spacing:.05em;padding:10px;margin-top:6px;border-radius:8px;border:1.5px solid var(--line);color:var(--text);background:var(--panel-2);transition:.15s;cursor:pointer}
+.btn-layer-toggle:hover{background:var(--panel-3);border-color:var(--dim)}
+.btn-layer-toggle.active{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}

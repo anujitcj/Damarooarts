@@ -144,23 +144,6 @@
       }
     ]
   },
-  "depth": [
-    {
-      "id": "background",
-      "label": "Back",
-      "order": 0
-    },
-    {
-      "id": "midground",
-      "label": "Mid",
-      "order": 1
-    },
-    {
-      "id": "foreground",
-      "label": "Front",
-      "order": 2
-    }
-  ],
   "scale": [
     {
       "id": "small",
