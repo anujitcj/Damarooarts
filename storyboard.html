@@ -937,11 +937,23 @@ function buildHumanoidMesh(col,h,type,action){
   const clothDark=mat(new THREE.Color(col).multiplyScalar(.58),.78,.02);
   const hair=mat(type==='woman'?'#2B211D':'#241A16',.9,0);
   const shoe=mat('#181818',.82,.05);
-  const standing=h*.5;
-  let hipY=.9, torsoY=1.25, headY=1.88;
-  if(a.pose==='sitting'){hipY=.52;torsoY=.9;headY=1.5;}
-  if(a.pose==='sleeping'){hipY=.42;torsoY=.55;headY=.72;}
-  if(a.pose==='kneeling'){hipY=.55;torsoY=1.0;headY=1.62;}
+  const pose=a.pose||'standing';
+
+let hipY=.9;
+let torsoY=1.25;
+let headY=1.88;
+
+if(pose==='sitting'){
+  hipY=.68;
+  torsoY=1.08;
+  headY=1.72;
+}
+
+if(pose==='sleeping'){
+  hipY=.45;
+  torsoY=.72;
+  headY=1.00;
+}
   const torso=addPart(g,new THREE.CylinderGeometry(.29,.25,.82,16),cloth,[0,torsoY,0]);
 torso.scale.set(1,.95,.72);
   addPart(g,new THREE.CylinderGeometry(.22,.25,.18,16),clothDark,[0,torsoY-.43,0]);
@@ -960,35 +972,193 @@ torso.scale.set(1,.95,.72);
   addPart(g,new THREE.SphereGeometry(.018,8,6),eye,[.065,headY+.025,-.175]);
   addPart(g,new THREE.BoxGeometry(.045,.012,.012),lip,[0,headY-.065,-.178]);
 
-  const armLen=.54, upper=.28;
-  function arm(side,mode){
-    const x=side*.34; const ag=new THREE.Group(); ag.position.set(x,torsoY+.22,0);
-    const sign=side;
-    let z=0, rx=0, rz=side*-.08;
-    if(mode==='raised')rx=-Math.PI*.95;
-    if(mode==='forward')rz=side*.95;
-    if(mode==='crossed'){rz=side*.95;rx=-Math.PI*.45;}
-    if(mode==='hip'){rz=side*.9;rx=Math.PI*.1;}
-    ag.rotation.set(rx,0,rz);
-    addPart(ag,new THREE.CylinderGeometry(.07,.085,upper,12),clothDark,[0,-.14,0]);
-    const fore=addPart(ag,new THREE.CylinderGeometry(.055,.07,.29,12),skin,[0,-.42,0]);
-    fore.rotation.z=side*.08;
-    addPart(ag,new THREE.SphereGeometry(.065,12,8),skin2,[0,-.59,0]);
-   for(let i=0;i<3;i++){
+ const armLen=.54, upper=.28;
+
+function arm(side,mode){
+  const ag=new THREE.Group();
+
+  let x=side*.34;
+  let y=torsoY+.22;
+  let z=0;
+
+  ag.position.set(x,y,z);
+
+  let rx=0;
+  let ry=0;
+  let rz=side*-.08;
+
+  if(mode==='raised'){
+    rx=-Math.PI*.95;
+  }
+
+  if(mode==='forward'){
+    rz=side*.95;
+  }
+
+  if(mode==='crossed'){
+    rz=side*.95;
+    rx=-Math.PI*.45;
+  }
+
+  if(mode==='hip'){
+    rz=side*.9;
+    rx=Math.PI*.1;
+  }
+
+  ag.rotation.set(rx,ry,rz);
+
   addPart(
     ag,
-    new THREE.CylinderGeometry(.012,.012,.055,8),
-    skin2,
-    [side*(i-1)*.018,-.63,-.015]
+    new THREE.CylinderGeometry(.07,.085,upper,12),
+    clothDark,
+    [0,-.14,0]
   );
-}
-    g.add(ag); return ag;
+
+  const fore=addPart(
+    ag,
+    new THREE.CylinderGeometry(.055,.07,.29,12),
+    skin,
+    [0,-.42,0]
+  );
+
+  fore.rotation.z=side*.08;
+
+  addPart(
+    ag,
+    new THREE.SphereGeometry(.065,12,8),
+    skin2,
+    [0,-.59,0]
+  );
+
+  for(let i=0;i<3;i++){
+    addPart(
+      ag,
+      new THREE.CylinderGeometry(.012,.012,.055,8),
+      skin2,
+      [side*(i-1)*.018,-.63,-.015]
+    );
   }
-  arm(-1,a.leftArm||'down'); arm(1,a.rightArm||'down');
-  function leg(side,mode){
-    const lg=new THREE.Group(); lg.position.set(side*.13,hipY,0);
-    if(a.pose==='sitting'){lg.rotation.x=side*.0;}
-    if(a.pose==='sleeping'){lg.rotation.z=side*.18;}
+
+  g.add(ag);
+  return ag;
+}
+
+arm(-1,a.leftArm||'down');
+arm(1,a.rightArm||'down');
+ function leg(side){
+  const lg=new THREE.Group();
+
+  if(pose==='standing'){
+    lg.position.set(side*.13,hipY,0);
+
+    addPart(
+      lg,
+      new THREE.CylinderGeometry(.095,.12,.52,12),
+      clothDark,
+      [0,-.26,0]
+    );
+
+    addPart(
+      lg,
+      new THREE.CylinderGeometry(.07,.085,.48,12),
+      skin,
+      [0,-.72,0]
+    );
+
+    addPart(
+      lg,
+      new THREE.BoxGeometry(.16,.08,.3),
+      shoe,
+      [0,-.99,-.055]
+    );
+
+    g.add(lg);
+    return;
+  }
+
+  if(pose==='sitting'){
+    /*
+      Thigh goes forward horizontally.
+      Shin goes down from the knee.
+    */
+
+    lg.position.set(side*.15,hipY,0);
+
+    const thigh=new THREE.Group();
+    thigh.rotation.z=side*.95;
+
+    addPart(
+      thigh,
+      new THREE.CylinderGeometry(.095,.12,.48,12),
+      clothDark,
+      [0,-.24,0]
+    );
+
+    const shin=new THREE.Group();
+    shin.position.set(0,-.46,0);
+
+    addPart(
+      shin,
+      new THREE.CylinderGeometry(.07,.085,.48,12),
+      skin,
+      [0,-.24,0]
+    );
+
+    addPart(
+      shin,
+      new THREE.BoxGeometry(.16,.08,.3),
+      shoe,
+      [0,-.51,-.055]
+    );
+
+    thigh.add(shin);
+    lg.add(thigh);
+    g.add(lg);
+    return;
+  }
+
+  if(pose==='sleeping'){
+    /*
+      Legs extend horizontally along the body.
+    */
+
+    lg.position.set(side*.13,.45,0);
+    lg.rotation.z=side*.04;
+
+    addPart(
+      lg,
+      new THREE.CylinderGeometry(.095,.12,.58,12),
+      clothDark,
+      [0,-.29,0]
+    );
+
+    addPart(
+      lg,
+      new THREE.CylinderGeometry(.07,.085,.48,12),
+      skin,
+      [0,-.76,0]
+    );
+
+    addPart(
+      lg,
+      new THREE.BoxGeometry(.16,.08,.30),
+      shoe,
+      [0,-1.02,-.055]
+    );
+
+    g.add(lg);
+  }
+}
+
+if(pose==='standing'){
+  leg(-1);
+  leg(1);
+}
+
+if(pose==='sitting'){
+  leg(-1);
+  leg(1);
+}
     addPart(lg,new THREE.CylinderGeometry(.095,.12,.52,12),clothDark,[0,-.26,0]);
     const shin=addPart(lg,new THREE.CylinderGeometry(.07,.085,.48,12),skin,[0,-.72,0]);
     if(a.pose==='sitting')lg.rotation.x=side*.72;
@@ -1000,7 +1170,6 @@ torso.scale.set(1,.95,.72);
     const lg=addPart(g,new THREE.CylinderGeometry(.085,.105,.9,12),clothDark,[.18,.48,0]);lg.rotation.z=-.12;
     addPart(g,new THREE.BoxGeometry(.17,.08,.3),shoe,[.62,.46,0]);
   }
-  if(a.pose==='sleeping'){g.rotation.z=-Math.PI/2;g.position.y=.25;}
   if(a.pose==='sitting'){g.position.y=.05;}
   if(a.head==='left')head.rotation.y=.5;
   if(a.head==='right')head.rotation.y=-.5;
