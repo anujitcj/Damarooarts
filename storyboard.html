@@ -83,6 +83,11 @@ select{appearance:none;cursor:pointer}
 .btn-action.danger:hover{border-color:var(--danger);color:var(--danger)}
 .btn-action .ico{width:18px;height:18px;border-radius:4px;background:rgba(255,255,255,.07);display:grid;place-items:center;font-size:11px;flex-shrink:0}
 .btn-action.primary .ico{background:rgba(0,0,0,.15)}
+  .btn-action:disabled{
+  opacity:.35;
+  cursor:not-allowed;
+  pointer-events:none;
+}
 /* ── LISTS ── */
 .anchor-list,.god-list{display:flex;flex-direction:column;gap:3px;margin-bottom:7px}
 .anchor-item,.god-item{display:flex;align-items:center;gap:7px;padding:8px 9px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;font:11px var(--mono);cursor:pointer}
@@ -391,7 +396,9 @@ select{appearance:none;cursor:pointer}
         <div class="sec-title">Export</div>
         <button class="btn-action" id="btn-export-png"><span class="ico">⬇</span> Export PNG Sequence</button>
         <button class="btn-action" id="btn-export-contact"><span class="ico">📋</span> Contact Sheet</button>
-        <button class="btn-action" id="btn-export-mp4"><span class="ico">🎬</span> Export MP4</button>
+       <button class="btn-action" id="btn-export-mp4" disabled>
+  <span class="ico">🎬</span> Export MP4
+</button>
       </div>
     </div>
 
