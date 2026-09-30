@@ -150,6 +150,52 @@ select{appearance:none;cursor:pointer}
 .rot-axis-label{font:500 10px var(--mono);color:var(--dim);width:14px;flex-shrink:0}
 .rot-axis-val{font:500 11px var(--mono);color:var(--text);width:42px;text-align:right;flex-shrink:0}
 /* ── SHOT MODE ── */
+  /* ── FINAL SHOT FULLSCREEN ── */
+#viewport.final-shot-view{
+  background:#000;
+}
+
+#viewport.final-shot-view > canvas{
+  width:100%!important;
+  height:100%!important;
+  display:block;
+}
+
+#viewport.final-shot-view .crosshair,
+#viewport.final-shot-view .hud,
+#viewport.final-shot-view .cam-pos-hud,
+#viewport.final-shot-view .controls-hud,
+#viewport.final-shot-view .mode-banner,
+#viewport.final-shot-view .dist-warn,
+#viewport.final-shot-view .playback-overlay{
+  display:none!important;
+}
+
+#viewport.final-shot-view #final-shot-exit{
+  display:flex;
+}
+
+#final-shot-exit{
+  display:none;
+  position:absolute;
+  top:20px;
+  right:20px;
+  z-index:50;
+  align-items:center;
+  justify-content:center;
+  padding:10px 14px;
+  border:1px solid rgba(255,255,255,.25);
+  border-radius:7px;
+  background:rgba(0,0,0,.65);
+  color:#fff;
+  font:500 11px var(--mono);
+  cursor:pointer;
+  backdrop-filter:blur(8px);
+}
+
+#final-shot-exit:hover{
+  background:rgba(255,255,255,.12);
+}
 .shot-frame-display{font:600 14px var(--mono);color:var(--text);text-align:center;padding:7px 0 1px;letter-spacing:.06em}
 .shot-time-display{font:10px var(--mono);color:var(--dim);text-align:center;margin-bottom:8px}
 .shot-pb-bar{display:flex;gap:4px;align-items:center;margin-bottom:7px}
@@ -303,6 +349,9 @@ select{appearance:none;cursor:pointer}
           <button class="btn-action" id="btn-dup-shot"><span class="ico">⎘</span> Duplicate</button>
           <button class="btn-action" id="btn-rename-shot"><span class="ico">✎</span> Rename</button>
           <button class="btn-action danger" id="btn-del-shot"><span class="ico">×</span> Delete</button>
+          <button class="btn-action" id="btn-final-shot">
+  <span class="ico">⛶</span> View Final Shot
+</button>
         </div>
       </div>
       <div class="divider"></div>
@@ -349,8 +398,12 @@ select{appearance:none;cursor:pointer}
   </aside>
 
   <!-- VIEWPORT -->
-  <div class="viewport-wrap" id="viewport">
-    <canvas id="three-canvas"></canvas>
+<div class="viewport-wrap" id="viewport">
+  <canvas id="three-canvas"></canvas>
+
+  <button id="final-shot-exit" type="button">
+    ✕ EXIT FULLSCREEN
+  </button>
     <div style="position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;display:flex;flex-direction:column;align-items:center;justify-content:flex-start">
       <div class="crosshair" id="crosshair"></div>
       <div class="hud" id="hud" style="pointer-events:auto">
@@ -1609,6 +1662,69 @@ function setCurrentFrame(f){
   shot.timeline.currentFrame=total>0?clamp(Math.round(f),0,total-1):0;
   applyFrameToScene(shot.timeline.currentFrame);updateShotUI();
 }
+  // ── FINAL SHOT FULLSCREEN VIEWER ──────────────────────────────
+const viewport=document.getElementById('viewport');
+const finalShotBtn=document.getElementById('btn-final-shot');
+const finalShotExit=document.getElementById('final-shot-exit');
+
+async function enterFinalShotView(){
+  const shot=activeShot();
+  if(!shot)return;
+
+  const total=totalFrames();
+
+  if(total<1){
+    showToast('This shot has no camera frames yet');
+    return;
+  }
+
+  // Stop any active playback.
+  pauseShotPlay();
+
+  // Always show the final frame.
+  setCurrentFrame(total-1);
+
+  // Mark viewport as final-shot mode.
+  viewport.classList.add('final-shot-view');
+
+  // Enter real browser fullscreen.
+  try{
+    if(!document.fullscreenElement){
+      await viewport.requestFullscreen();
+    }
+  }catch(err){
+    console.warn('Fullscreen request failed:',err);
+
+    // Keep the clean viewer active even if browser fullscreen is blocked.
+    resize();
+  }
+
+  resize();
+}
+
+function exitFinalShotView(){
+  viewport.classList.remove('final-shot-view');
+
+  if(document.fullscreenElement){
+    document.exitFullscreen().catch(()=>{});
+  }
+
+  resize();
+}
+
+finalShotBtn.addEventListener('click',enterFinalShotView);
+finalShotExit.addEventListener('click',exitFinalShotView);
+
+// Browser Escape / fullscreen exit handling.
+document.addEventListener('fullscreenchange',()=>{
+  if(document.fullscreenElement===viewport){
+    viewport.classList.add('final-shot-view');
+    resize();
+  }else{
+    viewport.classList.remove('final-shot-view');
+    resize();
+  }
+});
 
 // Shot controls
 document.getElementById('shot-play').addEventListener('click',()=>{
