@@ -1,29 +1,97 @@
 {
   "camera": {
     "horizontal": [
-      {"id": "extreme-left", "label": "X-Left", "angle": -60},
-      {"id": "left", "label": "Left", "angle": -25},
-      {"id": "center", "label": "Center", "angle": 0},
-      {"id": "right", "label": "Right", "angle": 25},
-      {"id": "extreme-right", "label": "X-Right", "angle": 60},
-      {"id": "behind", "label": "Behind", "angle": 180}
+      {
+        "id": "extreme-left",
+        "label": "X-Left",
+        "angle": -60
+      },
+      {
+        "id": "left",
+        "label": "Left",
+        "angle": -25
+      },
+      {
+        "id": "center",
+        "label": "Center",
+        "angle": 0
+      },
+      {
+        "id": "right",
+        "label": "Right",
+        "angle": 25
+      },
+      {
+        "id": "extreme-right",
+        "label": "X-Right",
+        "angle": 60
+      },
+      {
+        "id": "behind",
+        "label": "Behind",
+        "angle": 180
+      }
     ],
     "vertical": [
-      {"id": "extreme-top", "label": "X-Top", "angle": 85},
-      {"id": "high", "label": "High", "angle": 30},
-      {"id": "eye-level", "label": "Eye", "angle": 0},
-      {"id": "low", "label": "Low", "angle": -25},
-      {"id": "extreme-bottom", "label": "X-Bottom", "angle": -60}
+      {
+        "id": "extreme-top",
+        "label": "X-Top",
+        "angle": 85
+      },
+      {
+        "id": "high",
+        "label": "High",
+        "angle": 30
+      },
+      {
+        "id": "eye-level",
+        "label": "Eye",
+        "angle": 0
+      },
+      {
+        "id": "low",
+        "label": "Low",
+        "angle": -25
+      },
+      {
+        "id": "extreme-bottom",
+        "label": "X-Bottom",
+        "angle": -60
+      }
     ],
     "lens": [
-      {"id": "wide", "label": "Wide", "fov": 62},
-      {"id": "normal", "label": "Normal", "fov": 42},
-      {"id": "telephoto", "label": "Tele", "fov": 22}
+      {
+        "id": "wide",
+        "label": "Wide",
+        "fov": 62
+      },
+      {
+        "id": "normal",
+        "label": "Normal",
+        "fov": 42
+      },
+      {
+        "id": "telephoto",
+        "label": "Tele",
+        "fov": 22
+      }
     ],
     "shotScale": [
-      {"id": "wide", "label": "Wide", "factor": 10},
-      {"id": "medium", "label": "Medium", "factor": 6},
-      {"id": "close", "label": "Close", "factor": 3.4}
+      {
+        "id": "wide",
+        "label": "Wide",
+        "factor": 10
+      },
+      {
+        "id": "medium",
+        "label": "Medium",
+        "factor": 6
+      },
+      {
+        "id": "close",
+        "label": "Close",
+        "factor": 3.4
+      }
     ]
   },
   "objects": [
@@ -32,18 +100,44 @@
       "label": "Man",
       "category": "character",
       "color": "#3B82C4",
-      "poses": ["standing", "sitting", "sleeping", "crouching"],
-      "arms": ["both-down", "one-raised", "both-raised"],
-      "expressions": ["neutral", "smile", "sad"]
+      "poses": [
+        "standing",
+        "sitting",
+        "sleeping",
+        "crouching"
+      ],
+      "arms": [
+        "both-down",
+        "one-raised",
+        "both-raised"
+      ],
+      "expressions": [
+        "neutral",
+        "smile",
+        "sad"
+      ]
     },
     {
       "id": "woman",
       "label": "Woman",
       "category": "character",
       "color": "#D45B8C",
-      "poses": ["standing", "sitting", "sleeping", "crouching"],
-      "arms": ["both-down", "one-raised", "both-raised"],
-      "expressions": ["neutral", "smile", "sad"]
+      "poses": [
+        "standing",
+        "sitting",
+        "sleeping",
+        "crouching"
+      ],
+      "arms": [
+        "both-down",
+        "one-raised",
+        "both-raised"
+      ],
+      "expressions": [
+        "neutral",
+        "smile",
+        "sad"
+      ]
     },
     {
       "id": "bed",
@@ -92,8 +186,34 @@
     }
   ],
   "scale": [
-    {"id": "small", "label": "Small", "factor": 0.55},
-    {"id": "medium", "label": "Medium", "factor": 0.85},
-    {"id": "large", "label": "Large", "factor": 1.2}
-  ]
+    {
+      "id": "small",
+      "label": "Small",
+      "factor": 0.55
+    },
+    {
+      "id": "medium",
+      "label": "Medium",
+      "factor": 0.85
+    },
+    {
+      "id": "large",
+      "label": "Large",
+      "factor": 1.2
+    }
+  ],
+  "room": {
+    "width": 16,
+    "height": 7,
+    "depth": 12,
+    "cameraMargin": 0.35
+  },
+  "cameraPath": {
+    "segmentSeconds": 1,
+    "minAnchorDistance": 0.5,
+    "maxAnchorDistance": 5.0
+  },
+  "shot": {
+    "fps": 12
+  }
 }

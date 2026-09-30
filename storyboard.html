@@ -1,60 +1,76 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Damaroo — Storyboard Simulator</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="style.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Damaroo — Storyboard Simulator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="topbar">
-  <div class="topbar-left"><span class="brand">DAMAROO</span><span class="brand-sub">Storyboard Simulator</span></div>
-  <nav class="steps">
-    <button class="step-tab active" data-step="0">1 &nbsp;Camera</button>
-    <button class="step-tab" data-step="1">2 &nbsp;Objects</button>
-  </nav>
-  <div class="topbar-center" id="shot-label" contenteditable="true" spellcheck="false" title="Click to rename this shot">SHOT 001</div>
-  <div class="topbar-right">
-    <button class="btn-ghost" id="btn-toggle-grid" title="Rule-of-thirds grid">Grid</button>
-    <button class="btn-ghost" id="btn-export-png" title="Export current frame">Export PNG</button>
-    <button class="btn-ghost" id="btn-export-sheet" title="Export all shots">Export Sheet</button>
+  <div id="landing" class="landing">
+    <div class="landing-card">
+      <div class="eyebrow">DAMAROO ARTS · PREVIS</div>
+      <h1>STORYBOARD<br>SIMULATOR</h1>
+      <p>Block the room. Fly the camera. Stage the objects. Build the shot.</p>
+      <div class="stage-grid">
+        <button class="stage-card" data-stage="camera"><span>01</span><strong>CAMERA PATH</strong><small>Fly, anchor, release God Entities, build 1s moves.</small></button>
+        <button class="stage-card" data-stage="object"><span>02</span><strong>OBJECT</strong><small>Assign actors and props to locked spatial anchors.</small></button>
+        <button class="stage-card" data-stage="shot"><span>03</span><strong>SHOT</strong><small>Animate attributes on a 12 FPS timeline and export.</small></button>
+      </div>
+      <button id="enter-last" class="last-scene" hidden>Continue current scene</button>
+    </div>
   </div>
-</header>
 
-<div class="app-body">
-  <aside class="panel-left">
-    <section class="ctrl-section" id="pan-cam"></section>
-    <section class="ctrl-section" id="pan-obj" hidden></section>
-  </aside>
+  <header class="topbar">
+    <div class="brand">DAMAROO <em>STORYBOARD SIMULATOR</em></div>
+    <nav class="steps">
+      <button class="step-tab" data-stage="camera">01 Camera Path</button>
+      <button class="step-tab" data-stage="object">02 Object</button>
+      <button class="step-tab" data-stage="shot">03 Shot</button>
+    </nav>
+    <div class="scene-name" id="scene-name" contenteditable="true" spellcheck="false">SCENE 001</div>
+    <div class="top-actions">
+      <button id="undo">Undo</button><button id="redo">Redo</button>
+      <button id="new-scene">New</button><button id="save-scene">Save</button>
+      <button id="load-scene">Load</button><input id="load-input" type="file" accept=".json" hidden>
+    </div>
+  </header>
 
-  <main class="panel-center">
-    <div class="canvas-wrap"><canvas id="storyboard-canvas" width="960" height="540"></canvas></div>
-    <div class="shot-actions">
-      <span class="shot-info" id="shot-info"></span>
-      <button class="btn-secondary" id="btn-next">Lock camera, place objects</button>
-      <button class="btn-primary" id="btn-save-shot">Save Shot</button>
-      <button class="btn-secondary" id="btn-new-shot">+ New Shot</button>
-      <button class="btn-secondary" id="btn-duplicate-shot">Duplicate</button>
-    </div>
-    <div class="timeline-wrap">
-      <div class="timeline-label">Timeline</div>
-      <div class="timeline-strip" id="timeline-strip"></div>
-    </div>
+  <main class="workspace">
+    <aside class="left-panel">
+      <section id="camera-panel" class="mode-panel"></section>
+      <section id="object-panel" class="mode-panel" hidden></section>
+      <section id="shot-panel" class="mode-panel" hidden></section>
+    </aside>
+
+    <section class="viewport">
+      <div id="viewport3d"></div>
+      <div class="viewport-hud">
+        <div id="mode-title">CAMERA PATH</div>
+        <div id="camera-readout">X 0.00 · Y 1.60 · Z 7.00 · P 0° · Y 180° · R 0°</div>
+      </div>
+      <div id="toast"></div>
+      <div class="crosshair"></div>
+    </section>
+
+    <aside class="right-panel">
+      <div class="panel-head">SCENE <span id="scene-count">0</span></div>
+      <div id="entity-list" class="entity-list"></div>
+    </aside>
   </main>
 
-  <aside class="panel-right" id="panel-right" hidden>
-    <div class="ctrl-section-title" style="padding:16px 16px 0;">Scene Objects <span class="count" id="obj-count">0/3</span></div>
-    <div class="ctrl-hint" style="padding:0 16px 10px;">First object is the background. Each new one is layered in front of the previous.</div>
-    <div class="obj-list" id="obj-list"></div>
-    <div class="add-obj-wrap">
-      <button class="btn-add-obj" id="btn-add-obj">+ Add Object</button>
-      <div class="obj-picker" id="obj-picker" hidden></div>
+  <footer class="bottom">
+    <div class="transport">
+      <button id="play">▶ PLAY</button><button id="pause">Ⅱ PAUSE</button><button id="restart">↺ RESTART</button>
+      <button id="prev-frame">‹ FRAME</button><button id="next-frame">FRAME ›</button>
     </div>
-  </aside>
-</div>
-<script src="app.js" type="module"></script>
+    <div class="frame-readout" id="frame-readout">FRAME 0 / 0 · 12 FPS</div>
+    <input id="timeline" type="range" min="0" max="0" value="0" step="1">
+  </footer>
+
+  <script type="module" src="app.js"></script>
 </body>
 </html>
