@@ -12,15 +12,12 @@
 <body>
   <div id="landing" class="landing">
     <div class="landing-card">
-      <div class="eyebrow">DAMAROO ARTS · PREVIS</div>
-      <h1>STORYBOARD<br>SIMULATOR</h1>
-      <p>Block the room. Fly the camera. Stage the objects. Build the shot.</p>
+      <div class="landing-title">STORYBOARD SIMULATOR</div>
       <div class="stage-grid">
-        <button class="stage-card" data-stage="camera"><span>01</span><strong>CAMERA PATH</strong><small>Fly, anchor, release God Entities, build 1s moves.</small></button>
-        <button class="stage-card" data-stage="object"><span>02</span><strong>OBJECT</strong><small>Assign actors and props to locked spatial anchors.</small></button>
-        <button class="stage-card" data-stage="shot"><span>03</span><strong>SHOT</strong><small>Animate attributes on a 12 FPS timeline and export.</small></button>
+        <button class="stage-card" data-stage="camera">CAMERA PATH</button>
+        <button class="stage-card" data-stage="object">OBJECT</button>
+        <button class="stage-card" data-stage="shot">SHOT</button>
       </div>
-      <button id="enter-last" class="last-scene" hidden>Continue current scene</button>
     </div>
   </div>
 
@@ -71,6 +68,27 @@
     <input id="timeline" type="range" min="0" max="0" value="0" step="1">
   </footer>
 
+  <script>
+    // Entry navigation intentionally works before the 3D engine initializes.
+    document.querySelectorAll('.stage-card').forEach(function(button) {
+      button.addEventListener('click', function() {
+        document.getElementById('landing').classList.add('hidden');
+        document.querySelectorAll('.step-tab').forEach(function(tab) {
+          tab.classList.toggle('active', tab.dataset.stage === button.dataset.stage);
+        });
+        document.querySelectorAll('.mode-panel').forEach(function(panel) {
+          panel.hidden = true;
+        });
+        var panel = document.getElementById(button.dataset.stage + '-panel');
+        if (panel) panel.hidden = false;
+        var title = document.getElementById('mode-title');
+        if (title) title.textContent =
+          button.dataset.stage === 'camera' ? 'CAMERA PATH' :
+          button.dataset.stage === 'object' ? 'OBJECT' : 'SHOT';
+        window.__damarooRequestedStage = button.dataset.stage;
+      });
+    });
+  </script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

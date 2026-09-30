@@ -177,6 +177,7 @@ function syncScene(){
   $('#scene-count').textContent=state.godEntities.length+state.objects.length;
 }
 function setStage(stage){
+  if (!['camera','object','shot'].includes(stage)) stage='camera';
   state.stage=stage;
   document.querySelectorAll('.step-tab').forEach(b=>b.classList.toggle('active',b.dataset.stage===stage));
   document.querySelectorAll('.mode-panel').forEach(p=>p.hidden=true);
@@ -364,7 +365,22 @@ function resize(){const r=$('#viewport3d').getBoundingClientRect();renderer.setS
 window.addEventListener('resize',resize);
 function loop(){controls.update();if(state.stage==='camera'){clampCamera();stateFromCamera();$('#camera-readout').textContent=`X ${state.camera.position.x.toFixed(2)} · Y ${state.camera.position.y.toFixed(2)} · Z ${state.camera.position.z.toFixed(2)} · P ${state.camera.rotation.pitch.toFixed(0)}° · Y ${state.camera.rotation.yaw.toFixed(0)}° · R ${state.camera.rotation.roll.toFixed(0)}°`}renderer.render(scene,camera);requestAnimationFrame(loop)}
 async function init(){
-  try{CFG=await fetch('./config.json',{cache:'no-store'}).then(r=>r.json())}catch(e){toast('config.json could not be loaded');return}
-  resize();cameraFromState();renderUI();syncScene();setStage('camera');loop();
+  try{
+    CFG=await fetch('./config.json',{cache:'no-store'}).then(r=>{
+      if(!r.ok) throw new Error('config.json HTTP '+r.status);
+      return r.json();
+    });
+  }catch(e){
+    const t=$('#toast');
+    t.textContent='Could not initialize the simulator. Open it through the Damaroo site/server so config.json can load.';
+    t.classList.add('show');
+    console.error(e);
+    return;
+  }
+  resize();cameraFromState();renderUI();syncScene();
+  const requestedStage = window.__damarooRequestedStage || 'camera';
+  setStage(requestedStage);
+  if (requestedStage === 'camera') $('#landing').classList.add('hidden');
+  loop();
 }
 init();
