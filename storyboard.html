@@ -353,7 +353,7 @@ select{appearance:none;cursor:pointer}
       <div class="crosshair" id="crosshair"></div>
       <div class="hud" id="hud">
         <div class="hud-pill" id="hud-mode">FREE FLY</div>
-        <div class="hud-pill" id="hud-fly-hint">Click viewport to fly</div>
+        <button class="hud-pill fly-enter" id="hud-fly-hint" type="button">ENTER CAMERA · CLICK</button>
       </div>
       <div class="cam-pos-hud" id="cam-pos-hud">
         <div><b>X</b> <span id="h-x">0.00</span></div>
@@ -981,16 +981,24 @@ let playbackCamActive=false,objCamPathActive=false;
 document.addEventListener('keydown',e=>{keys[e.code]=true;});
 document.addEventListener('keyup',e=>{keys[e.code]=false;});
 
-canvas.addEventListener('click',()=>{
+function enterCameraFly(){
   if(STATE.ui.stage!=='camera')return;
   if(playbackCamActive||STATE.ui.objCamMode==='path')return;
-  canvas.requestPointerLock();
+  const target=canvas;
+  if(!document.pointerLockElement){
+    const req=target.requestPointerLock?.();
+    if(req && typeof req.catch==='function') req.catch(()=>showToast('Browser blocked camera control. Click the 3D room again to allow it.'));
+  }
+}
+canvas.addEventListener('click',enterCameraFly);
+document.getElementById('viewport').addEventListener('click',e=>{
+  if(e.target===canvas || e.target.id==='hud-fly-hint') enterCameraFly();
 });
 
 document.addEventListener('pointerlockchange',()=>{
   isPointerLocked=document.pointerLockElement===canvas;
   document.getElementById('crosshair').classList.toggle('visible',isPointerLocked);
-  document.getElementById('hud-fly-hint').textContent=isPointerLocked?'Esc to release':'Click viewport to fly';
+  document.getElementById('hud-fly-hint').textContent=isPointerLocked?'ESC · RELEASE CAMERA':'ENTER CAMERA · CLICK';
 });
 
 document.addEventListener('mousemove',e=>{
