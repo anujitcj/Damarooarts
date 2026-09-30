@@ -1,3 +1,5 @@
+import { onRequest as storyboardOnRequest } from './storyboard.js';
+
 const PROJECT_SLUG = "we-before-me";
 
 function json(data, status = 200) {
@@ -148,6 +150,14 @@ export async function onRequest(context) {
 
   const path = pathParts.join("/");
   const method = request.method;
+
+  // Storyboard Simulator API lives in a dedicated module but shares this Pages Function router.
+  if (path === `projects/${PROJECT_SLUG}/storyboard` || path.startsWith(`projects/${PROJECT_SLUG}/storyboard/`)) {
+    return storyboardOnRequest({
+      ...context,
+      params: { ...params, path: pathParts.slice(3) },
+    });
+  }
 
   try {
     /*
