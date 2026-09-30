@@ -48,10 +48,10 @@ select{appearance:none;cursor:pointer}
 .crosshair::before{width:1px;height:18px;top:-9px;left:0}
 .crosshair::after{width:18px;height:1px;top:0;left:-9px}
 /* ── HUD ── */
-.hud{position:absolute;top:12px;left:50%;transform:translateX(-50%);pointer-events:none;display:flex;gap:6px}
-.hud-pill{background:rgba(14,16,20,.8);border:1px solid rgba(42,47,58,.8);border-radius:99px;padding:5px 12px;font:10px var(--mono);color:var(--soft);letter-spacing:.08em;white-space:nowrap}
+.hud{position:absolute;top:12px;left:50%;transform:translateX(-50%);display:flex;gap:6px}
+.hud-pill{background:rgba(14,16,20,.8);border:1px solid rgba(42,47,58,.8);border-radius:99px;padding:5px 12px;font:10px var(--mono);color:var(--soft);letter-spacing:.08em;white-space:nowrap;pointer-events:auto;cursor:pointer}
 .hud-pill b{color:var(--text)}
-.hud-pill.fly-enter{pointer-events:auto;cursor:pointer;color:var(--text);border-color:var(--accent)}
+.hud-pill.fly-enter{cursor:pointer;color:var(--text);border-color:var(--accent)}
 #three-canvas.fly-active{cursor:crosshair}
 .cam-pos-hud{position:absolute;bottom:14px;left:14px;pointer-events:none;background:rgba(14,16,20,.8);border:1px solid rgba(42,47,58,.8);border-radius:9px;padding:10px 14px;font:10px var(--mono);line-height:1.9;color:var(--soft)}
 .cam-pos-hud b{color:var(--text);display:inline-block;width:36px}
@@ -351,9 +351,9 @@ select{appearance:none;cursor:pointer}
   <!-- VIEWPORT -->
   <div class="viewport-wrap" id="viewport">
     <canvas id="three-canvas"></canvas>
-    <div style="position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none">
+    <div style="position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;display:flex;flex-direction:column;align-items:center;justify-content:flex-start">
       <div class="crosshair" id="crosshair"></div>
-      <div class="hud" id="hud">
+      <div class="hud" id="hud" style="pointer-events:auto">
         <div class="hud-pill" id="hud-mode">FREE FLY</div>
         <button class="hud-pill fly-enter" id="hud-fly-hint" type="button">ENTER CAMERA · CLICK</button>
       </div>
