@@ -786,9 +786,15 @@ function syncScene(){
     if(!STATE.world.godEntities.find(g=>g.id===id)){scene.remove(godMeshes[id]);delete godMeshes[id];}
   });
   STATE.world.godEntities.forEach((god,i)=>{
+    const assigned=STATE.world.objects.some(o=>o.godId===god.id);
+    if(assigned){
+      if(godMeshes[god.id]){scene.remove(godMeshes[god.id]);delete godMeshes[god.id];}
+      return;
+    }
     if(!godMeshes[god.id])buildGodMesh(god,i);
     else{
       const g=godMeshes[god.id];
+      g.visible=true;
       g.userData.labelSprite.material.map=makeLabel('God Entity '+(i+1),godColor(i));
       g.userData.labelSprite.material.needsUpdate=true;
       g.position.set(god.pos.x,god.pos.y,god.pos.z);
@@ -904,15 +910,23 @@ function buildObjectMesh(obj){
   return g;
 }
 
+function clampObjectPos(obj){
+  if(!obj.pos)obj.pos={x:0,y:0,z:0};
+  obj.pos.x=Math.max(-ROOM_W/2+0.1,Math.min(ROOM_W/2-0.1,Number(obj.pos.x)||0));
+  obj.pos.y=Math.max(0.05,Math.min(ROOM_H-0.05,Number(obj.pos.y)||0.05));
+  obj.pos.z=Math.max(-ROOM_D/2+0.1,Math.min(ROOM_D/2-0.1,Number(obj.pos.z)||0));
+}
 function applyObjectPosition(mesh,obj){
-  if(obj.isFree&&obj.pos){
-    mesh.position.set(obj.pos.x,obj.pos.y||0,obj.pos.z);
-  }else{
-    const god=STATE.world.godEntities.find(g=>g.id===obj.godId);
-    if(god){
-      const off=obj.offset||{x:0,y:0,z:0};
-      mesh.position.set(god.pos.x+(off.x||0),off.y||0,god.pos.z+(off.z||0));
-    }
+  if(obj.pos){
+    clampObjectPos(obj);
+    mesh.position.set(obj.pos.x,obj.pos.y,obj.pos.z);
+    return;
+  }
+  const god=STATE.world.godEntities.find(g=>g.id===obj.godId);
+  if(god){
+    obj.pos={x:god.pos.x,y:god.pos.y,z:god.pos.z};
+    clampObjectPos(obj);
+    mesh.position.set(obj.pos.x,obj.pos.y,obj.pos.z);
   }
 }
 
@@ -962,15 +976,15 @@ document.addEventListener('keydown',e=>{
       updateFlyUI();
       if(document.pointerLockElement)document.exitPointerLock();
       if(STATE.ui.stage==='object' && STATE.ui.selectedObj){
-        STATE.ui.objectMoveMode=false;
-        showToast('Camera released. Press Esc again to move the selected object.');
+        STATE.ui.objectMoveMode=true;
+        showToast('OBJECT MOVE ACTIVE · drag with cursor or use W/A/S/D · Q/E');
         updateUI();
       }
       return;
     }
     if(STATE.ui.stage==='object' && STATE.ui.selectedObj){
       STATE.ui.objectMoveMode=!STATE.ui.objectMoveMode;
-      showToast(STATE.ui.objectMoveMode?'OBJECT MOVE ACTIVE · W/A/S/D · Q/E':'OBJECT MOVE OFF');
+      showToast(STATE.ui.objectMoveMode?'OBJECT MOVE ACTIVE · drag with cursor or W/A/S/D · Q/E':'OBJECT MOVE OFF');
       updateUI();
       return;
     }
@@ -989,14 +1003,15 @@ document.addEventListener('keydown',e=>{
         if(e.code==='KeyQ')obj.pos.y=Math.max(0,obj.pos.y-step);
         if(e.code==='KeyE')obj.pos.y=Math.min(ROOM_H-0.1,obj.pos.y+step);
       }else{
-        if(!obj.offset)obj.offset={x:0,y:0,z:0};
-        if(e.code==='KeyW')obj.offset.z-=step;
-        if(e.code==='KeyS')obj.offset.z+=step;
-        if(e.code==='KeyA')obj.offset.x-=step;
-        if(e.code==='KeyD')obj.offset.x+=step;
-        if(e.code==='KeyQ')obj.offset.y=Math.max(-4,obj.offset.y-step);
-        if(e.code==='KeyE')obj.offset.y=Math.min(4,obj.offset.y+step);
+        if(!obj.pos){const god=STATE.world.godEntities.find(g=>g.id===obj.godId);obj.pos=god?{x:god.pos.x,y:god.pos.y,z:god.pos.z}:{x:0,y:1,z:0};}
+        if(e.code==='KeyW')obj.pos.z-=step;
+        if(e.code==='KeyS')obj.pos.z+=step;
+        if(e.code==='KeyA')obj.pos.x-=step;
+        if(e.code==='KeyD')obj.pos.x+=step;
+        if(e.code==='KeyQ')obj.pos.y-=step;
+        if(e.code==='KeyE')obj.pos.y+=step;
       }
+      clampObjectPos(obj);
       updateObjectMesh(obj);
       return;
     }
@@ -1408,7 +1423,8 @@ function assignObjectToGod(godId,type){
   pushUndo();
   STATE.world.objects=STATE.world.objects.filter(o=>o.godId!==godId);
   const cat=OBJ_CATALOGUE.find(o=>o.id===type);
-  const obj={id:uid(),godId,label:cat?cat.label:type,type,rot:{x:0,y:0,z:0},scale:1,visible:true,isFree:false,offset:{x:0,y:0,z:0}};
+  const god=STATE.world.godEntities.find(g=>g.id===godId);
+  const obj={id:uid(),godId,label:cat?cat.label:type,type,rot:{x:0,y:0,z:0},scale:1,visible:true,isFree:false,pos:god?{x:god.pos.x,y:god.pos.y,z:god.pos.z}:{x:0,y:1,z:0}};
   STATE.world.objects.push(obj);
   STATE.ui.selectedObj=obj;
   syncObjectMeshes();updateUI();
@@ -1705,11 +1721,13 @@ function updateGodList(){
   if(!STATE.world.godEntities.length){
     el.innerHTML='<div class="empty-msg">Fly to a position and release a God Entity.</div>';return;
   }
-  el.innerHTML=STATE.world.godEntities.map((g,i)=>`
+  const visibleGods=STATE.world.godEntities.filter(g=>!STATE.world.objects.some(o=>o.godId===g.id));
+  if(!visibleGods.length){el.innerHTML='<div class="empty-msg">All released God Entities are assigned to objects.</div>';return;}
+  el.innerHTML=visibleGods.map((g,i)=>`
     <div class="god-item${STATE.ui.selectedGod&&STATE.ui.selectedGod.id===g.id?' active':''}" data-god-id="${g.id}">
-      <div class="item-num" style="background:${godColorHex(i)};color:#111">G${i+1}</div>
+      <div class="item-num" style="background:${godColorHex(STATE.world.godEntities.findIndex(x=>x.id===g.id))};color:#111">G${STATE.world.godEntities.findIndex(x=>x.id===g.id)+1}</div>
       <div class="item-info">
-        <div class="item-name">God Entity ${i+1}</div>
+        <div class="item-name">God Entity ${STATE.world.godEntities.findIndex(x=>x.id===g.id)+1}</div>
         <div class="item-meta">${g.pos.x.toFixed(2)}, ${g.pos.y.toFixed(2)}, ${g.pos.z.toFixed(2)}</div>
       </div>
       <button class="item-del" data-del-god="${g.id}" title="Delete">×</button>
@@ -1838,13 +1856,13 @@ function updateObjectDetail(){
       </div>
       <div style="font:10px var(--mono);color:var(--dim)">Type: <b style="color:var(--text)">${obj.type}</b></div>
     </div>
-    ${obj.isFree ? '' : `<div class="ctrl-row" style="background:var(--panel2);padding:8px;border-radius:7px">
-      <div class="ctrl-label">God Entity Placement Offset</div>
-      <div style="font:9px var(--mono);color:var(--dim);margin-bottom:6px">Move relative to its God Entity without breaking the assignment.</div>
-      <div class="rot-axis-row"><span class="rot-axis-label">X</span><input type="range" id="obj-off-x" min="-10" max="10" step="0.05" value="${obj.offset?.x||0}" style="flex:1;accent-color:var(--accent)"/><span class="rot-axis-val" id="obj-off-x-val">${(obj.offset?.x||0).toFixed(2)}</span></div>
-      <div class="rot-axis-row"><span class="rot-axis-label">Y</span><input type="range" id="obj-off-y" min="-4" max="4" step="0.05" value="${obj.offset?.y||0}" style="flex:1;accent-color:var(--accent)"/><span class="rot-axis-val" id="obj-off-y-val">${(obj.offset?.y||0).toFixed(2)}</span></div>
-      <div class="rot-axis-row"><span class="rot-axis-label">Z</span><input type="range" id="obj-off-z" min="-10" max="10" step="0.05" value="${obj.offset?.z||0}" style="flex:1;accent-color:var(--accent)"/><span class="rot-axis-val" id="obj-off-z-val">${(obj.offset?.z||0).toFixed(2)}</span></div>
-    </div>`}
+    <div class="ctrl-row" style="background:var(--panel2);padding:8px;border-radius:7px">
+      <div class="ctrl-label">Object Position</div>
+      <div style="font:9px var(--mono);color:var(--dim);margin-bottom:6px">Absolute room position. The object can move anywhere inside the floor-to-ceiling boundaries.</div>
+      <div class="rot-axis-row"><span class="rot-axis-label">X</span><input type="range" id="obj-pos-x" min="-9.9" max="9.9" step="0.05" value="${obj.pos?.x||0}" style="flex:1;accent-color:var(--accent)"/><span class="rot-axis-val" id="obj-pos-x-val">${(obj.pos?.x||0).toFixed(2)}</span></div>
+      <div class="rot-axis-row"><span class="rot-axis-label">Y</span><input type="range" id="obj-pos-y" min="0.05" max="7.95" step="0.05" value="${obj.pos?.y||0.05}" style="flex:1;accent-color:var(--accent)"/><span class="rot-axis-val" id="obj-pos-y-val">${(obj.pos?.y||0.05).toFixed(2)}</span></div>
+      <div class="rot-axis-row"><span class="rot-axis-label">Z</span><input type="range" id="obj-pos-z" min="-9.9" max="9.9" step="0.05" value="${obj.pos?.z||0}" style="flex:1;accent-color:var(--accent)"/><span class="rot-axis-val" id="obj-pos-z-val">${(obj.pos?.z||0).toFixed(2)}</span></div>
+    </div>
     <div class="ctrl-row">
       <div class="ctrl-label">Rotation Y</div>
       <div class="rot-axis-row">
@@ -1857,8 +1875,16 @@ function updateObjectDetail(){
       <div class="ctrl-label">Rotation X</div>
       <div class="rot-axis-row">
         <span class="rot-axis-label">X</span>
-        <input type="range" id="rot-x" min="-90" max="90" value="${obj.rot.x||0}" style="flex:1;accent-color:var(--accent)"/>
+        <input type="range" id="rot-x" min="-180" max="180" value="${obj.rot.x||0}" style="flex:1;accent-color:var(--accent)"/>
         <span class="rot-axis-val" id="rot-x-val">${obj.rot.x||0}°</span>
+      </div>
+    </div>
+    <div class="ctrl-row">
+      <div class="ctrl-label">Rotation Z</div>
+      <div class="rot-axis-row">
+        <span class="rot-axis-label">Z</span>
+        <input type="range" id="rot-z" min="-180" max="180" value="${obj.rot.z||0}" style="flex:1;accent-color:var(--accent)"/>
+        <span class="rot-axis-val" id="rot-z-val">${obj.rot.z||0}°</span>
       </div>
     </div>
     <div class="ctrl-row">
@@ -1879,12 +1905,13 @@ function updateObjectDetail(){
     <button class="btn-action danger" id="btn-remove-obj"><span class="ico">×</span> Remove Object</button>`;
 
   ['x','y','z'].forEach(axis=>{
-    const input=document.getElementById('obj-off-'+axis);
+    const input=document.getElementById('obj-pos-'+axis);
     if(!input)return;
     input.addEventListener('input',e=>{
-      if(!obj.offset)obj.offset={x:0,y:0,z:0};
-      obj.offset[axis]=+e.target.value;
-      document.getElementById('obj-off-'+axis+'-val').textContent=obj.offset[axis].toFixed(2);
+      if(!obj.pos)obj.pos={x:0,y:1,z:0};
+      obj.pos[axis]=+e.target.value;
+      clampObjectPos(obj);
+      document.getElementById('obj-pos-'+axis+'-val').textContent=obj.pos[axis].toFixed(2);
       updateObjectMesh(obj);
     });
   });
@@ -1895,6 +1922,10 @@ function updateObjectDetail(){
   });
   document.getElementById('rot-x').addEventListener('input',e=>{
     obj.rot.x=+e.target.value;document.getElementById('rot-x-val').textContent=obj.rot.x+'°';
+    updateObjectMesh(obj);
+  });
+  document.getElementById('rot-z').addEventListener('input',e=>{
+    obj.rot.z=+e.target.value;document.getElementById('rot-z-val').textContent=obj.rot.z+'°';
     updateObjectMesh(obj);
   });
   document.getElementById('obj-scale').addEventListener('input',e=>{
@@ -2005,7 +2036,7 @@ function updateShotObjList(frame){
       </div>
       <div class="ctrl-row">
         <div class="ctrl-label">Rotation X <span style="color:var(--text)" id="kf-rot-x-val">${st.rot.x.toFixed(0)}°</span></div>
-        <input type="range" id="kf-rot-x" min="-90" max="90" step="1" value="${st.rot.x.toFixed(0)}" style="width:100%;accent-color:var(--accent)"/>
+        <input type="range" id="kf-rot-x" min="-180" max="180" step="1" value="${st.rot.x.toFixed(0)}" style="width:100%;accent-color:var(--accent)"/>
       </div>
       <div class="ctrl-row">
         <div class="ctrl-label">Rotation Z <span style="color:var(--text)" id="kf-rot-z-val">${st.rot.z.toFixed(0)}°</span></div>
@@ -2051,6 +2082,8 @@ function updateShotObjList(frame){
       };
       document.getElementById('kf-rot-y').addEventListener('change',updateExistingKf);
       document.getElementById('kf-rot-x').addEventListener('change',updateExistingKf);
+      document.getElementById('kf-rot-z').addEventListener('change',updateExistingKf);
+      document.getElementById('kf-scale').addEventListener('change',updateExistingKf);
     }
 
     const setKfBtn=document.getElementById('kf-set-btn');
@@ -2482,7 +2515,7 @@ function loadProject(file){
       // Rebuild camera frames for all shots
       STATE.shots.forEach(s=>rebuildCameraFrames(s));
       STATE.world.godEntities.forEach((g,i)=>{g.label='God Entity '+(i+1);});
-      STATE.world.objects.forEach(o=>{if(!o.offset)o.offset={x:0,y:0,z:0};if(o.isFree&&o.pos&&!Number.isFinite(o.pos.y))o.pos.y=0;});
+      STATE.world.objects.forEach(o=>{if(!o.pos){const g=STATE.world.godEntities.find(x=>x.id===o.godId);o.pos=g?{x:g.pos.x,y:g.pos.y,z:g.pos.z}:{x:0,y:1,z:0};}if(o.isFree&&o.pos&&!Number.isFinite(o.pos.y))o.pos.y=0;clampObjectPos(o);});
       STATE.ui.selectedGod=null;STATE.ui.selectedAnchor=null;STATE.ui.selectedObj=null;STATE.ui.objectMoveMode=false;
       STATE.ui.stage='camera';
       pausePlayback();pauseObjPlayback();pauseShotPlay();
@@ -2501,7 +2534,7 @@ function migrateToV4(data){
   rebuildCameraFrames(shot);
   STATE.world={room:{w:ROOM_W,h:ROOM_H,d:ROOM_D},godEntities:data.godEntities||[],objects:data.objects||[]};
   STATE.world.godEntities.forEach((g,i)=>{g.label='God Entity '+(i+1);});
-  STATE.world.objects.forEach(o=>{if(!o.offset)o.offset={x:0,y:0,z:0};if(o.isFree&&o.pos&&!Number.isFinite(o.pos.y))o.pos.y=0;});
+  STATE.world.objects.forEach(o=>{if(!o.pos){const g=STATE.world.godEntities.find(x=>x.id===o.godId);o.pos=g?{x:g.pos.x,y:g.pos.y,z:g.pos.z}:{x:0,y:1,z:0};}if(o.isFree&&o.pos&&!Number.isFinite(o.pos.y))o.pos.y=0;clampObjectPos(o);});
   STATE.shots=[shot];STATE.activeShotId=shot.id;
   STATE.project={name:'Migrated Project',createdAt:'',updatedAt:new Date().toISOString()};
   STATE.settings={fps:12,segmentDuration:1,distMin:0.5,distMax:5};
@@ -2584,8 +2617,33 @@ function animate(time){
 
 // (Panel-left delegation already attached above)
 
+// Object mode cursor dragging
+const objRaycaster=new THREE.Raycaster();
+const objPointer=new THREE.Vector2();
+let objDragging=false,objDragPlane=null,objDragOffset=new THREE.Vector3();
+function pointerToNdc(ev){const r=canvas.getBoundingClientRect();objPointer.x=((ev.clientX-r.left)/r.width)*2-1;objPointer.y=-((ev.clientY-r.top)/r.height)*2+1;}
+canvas.addEventListener('pointerdown',ev=>{
+  if(STATE.ui.stage!=='object'||!STATE.ui.objectMoveMode||!STATE.ui.selectedObj)return;
+  canvas.style.cursor='grabbing';
+  pointerToNdc(ev);objRaycaster.setFromCamera(objPointer,camera);
+  const m=objectMeshes[STATE.ui.selectedObj.id];if(!m)return;
+  const hits=objRaycaster.intersectObject(m,true);if(!hits.length)return;
+  const y=m.position.y;
+  objDragPlane=new THREE.Plane(new THREE.Vector3(0,1,0),-y);
+  const hit=new THREE.Vector3();if(!objRaycaster.ray.intersectPlane(objDragPlane,hit))return;
+  objDragOffset.copy(m.position).sub(hit);objDragging=true;canvas.setPointerCapture(ev.pointerId);ev.preventDefault();
+});
+canvas.addEventListener('pointermove',ev=>{
+  if(!objDragging||!STATE.ui.selectedObj)return;
+  pointerToNdc(ev);objRaycaster.setFromCamera(objPointer,camera);
+  const hit=new THREE.Vector3();if(!objRaycaster.ray.intersectPlane(objDragPlane,hit))return;
+  const obj=STATE.ui.selectedObj;obj.pos={x:hit.x+objDragOffset.x,y:objDragPlane.constant*-1,z:hit.z+objDragOffset.z};clampObjectPos(obj);updateObjectMesh(obj);
+});
+canvas.addEventListener('pointerup',ev=>{if(objDragging){objDragging=false;canvas.style.cursor='default';try{canvas.releasePointerCapture(ev.pointerId);}catch(_){}}});
+
 // Object mode — click in viewport to fly
 canvas.addEventListener('click',()=>{
+  if(STATE.ui.stage==='object'&&STATE.ui.objectMoveMode)return;
   if(STATE.ui.stage==='object'&&STATE.ui.objCamMode==='free'&&!isPointerLocked){
     canvas.requestPointerLock();
   }
