@@ -967,7 +967,8 @@ function updateFlyUI(){
 
 function enterCameraFly(){
   if(STATE.ui.stage!=='camera')return;
-  if(playbackCamActive||STATE.ui.objCamMode==='path')return;
+  // Object-mode camera selection must never block Camera Path fly mode.
+  if(playbackCamActive)return;
   isFlyActive=true;
   canvas.focus?.();
   updateFlyUI();
