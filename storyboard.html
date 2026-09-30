@@ -881,7 +881,7 @@ function syncScene(){
   rebuildPath();
 }
 
-// ── OBJECT 3D MESHES ───────────────────────────────────────────
+// ── OBJECT 3D MESHES · DETAILED PROCEDURAL LIBRARY ─────────────
 const objectMeshes={};
 const OBJ_CATALOGUE=[
   {id:'man',label:'Man',category:'character',color:'#3B82C4'},
@@ -899,125 +899,235 @@ const OBJ_CATALOGUE=[
 ];
 function objCatColor(cat){return{character:'#3B82C4',furniture:'#8B93A3',architecture:'#A07850',prop:'#60C4F0',vehicle:'#F5B301'}[cat]||'#8B93A3';}
 
-function buildHumanoidMesh(col,h){
+const OBJ_DEFAULT_ACTIONS={
+  man:{pose:'standing',leftArm:'down',rightArm:'down',head:'forward',build:'average',shirt:'casual'},
+  woman:{pose:'standing',leftArm:'down',rightArm:'down',head:'forward',build:'average',shirt:'casual'},
+  child:{pose:'standing',leftArm:'down',rightArm:'down',head:'forward',build:'child',shirt:'casual'},
+  bed:{style:'double',blanket:'on',pillows:2,headboard:'on'},
+  chair:{style:'dining',arms:'off',cushion:'on'},
+  sofa:{style:'three-seat',cushions:'on',arms:'on'},
+  table:{style:'dining',legs:'four',top:'wood'},
+  door:{style:'wood',open:0,handle:'on'},
+  window:{style:'modern',open:0,curtains:'off'},
+  phone:{screen:'on',orientation:'portrait',case:'on'},
+  laptop:{screen:'on',open:105},
+  car:{style:'sedan',doors:'closed',lights:'off',steering:0},
+};
+function ensureObjectActions(obj){
+  const d=OBJ_DEFAULT_ACTIONS[obj.type]||{};
+  if(!obj.action)obj.action={};
+  Object.keys(d).forEach(k=>{if(obj.action[k]===undefined)obj.action[k]=d[k];});
+  return obj.action;
+}
+function mat(c,r=.7,m=0){return new THREE.MeshStandardMaterial({color:new THREE.Color(c),roughness:r,metalness:m});}
+function addPart(g,geo,material,pos,rot){const m=new THREE.Mesh(geo,material);if(pos)m.position.set(...pos);if(rot)m.rotation.set(...rot);m.castShadow=true;m.receiveShadow=true;g.add(m);return m;}
+function cyl(r1,r2,h,seg=16){return new THREE.CylinderGeometry(r1,r2,h,seg);}
+function roundedBox(w,h,d,r=.06,segments=3){
+  // Beveled-looking box without external geometry dependencies.
   const g=new THREE.Group();
-  const c=new THREE.Color(col);
-  const mat=new THREE.MeshStandardMaterial({color:c,roughness:0.7,metalness:0.1});
-  const dark=new THREE.MeshStandardMaterial({color:new THREE.Color(col).multiplyScalar(0.5),roughness:0.8});
-  const body=new THREE.Mesh(new THREE.BoxGeometry(0.44,h*0.38,0.22),mat);body.position.y=h*0.47;body.castShadow=true;g.add(body);
-  const head=new THREE.Mesh(new THREE.SphereGeometry(h*0.115,12,8),mat);head.position.y=h*0.88;head.castShadow=true;g.add(head);
-  [-0.1,0.1].forEach(dx=>{const leg=new THREE.Mesh(new THREE.BoxGeometry(0.16,h*0.46,0.18),dark);leg.position.set(dx,h*0.23,0);leg.castShadow=true;g.add(leg);});
-  [-0.28,0.28].forEach(dx=>{const arm=new THREE.Mesh(new THREE.BoxGeometry(0.12,h*0.34,0.14),dark);arm.position.set(dx,h*0.54,0);arm.castShadow=true;g.add(arm);});
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),null); // replaced by caller material
+  return new THREE.BoxGeometry(w,h,d);
+}
+function makeJoint(g,matl,r=.07){return addPart(g,new THREE.SphereGeometry(r,12,8),matl,[0,0,0]);}
+
+function buildHumanoidMesh(col,h,type,action){
+  const g=new THREE.Group(); const a=action||{};
+  const skin=mat(type==='woman'?'#C98C68':'#B97855',.82,0);
+  const skin2=mat('#E0A17C',.84,0);
+  const cloth=mat(col,.72,.03);
+  const clothDark=mat(new THREE.Color(col).multiplyScalar(.58),.78,.02);
+  const hair=mat(type==='woman'?'#2B211D':'#241A16',.9,0);
+  const shoe=mat('#181818',.82,.05);
+  const standing=h*.5;
+  let hipY=.9, torsoY=1.25, headY=1.88;
+  if(a.pose==='sitting'){hipY=.52;torsoY=.9;headY=1.5;}
+  if(a.pose==='sleeping'){hipY=.42;torsoY=.55;headY=.72;}
+  if(a.pose==='kneeling'){hipY=.55;torsoY=1.0;headY=1.62;}
+  const torso=addPart(g,new THREE.CapsuleGeometry(.27,.62,5,12),cloth,[0,torsoY,0]);
+  torso.scale.set(1,.95,.62);
+  addPart(g,new THREE.CylinderGeometry(.22,.25,.18,16),clothDark,[0,torsoY-.43,0]);
+  const neck=addPart(g,cyl(.085,.1,.12,12),skin,[0,headY-.17,0]);
+  const head=addPart(g,new THREE.SphereGeometry(.19,20,14),skin2,[0,headY,0]);
+  head.scale.set(.9,1.08,.88);
+  addPart(g,new THREE.SphereGeometry(.195,18,12),hair,[0,headY+.055,-.005]).scale.set(.92,.72,.9);
+  // hair fringe / bun detail
+  if(type==='woman'){
+    addPart(g,new THREE.SphereGeometry(.11,14,10),hair,[0,headY+.17,-.02]);
+    addPart(g,new THREE.CylinderGeometry(.035,.055,.12,10),hair,[.18,headY+.02,0]);
+  }
+  // face detail
+  const eye=mat('#111',.55,0), lip=mat('#7A3030',.7,0);
+  addPart(g,new THREE.SphereGeometry(.018,8,6),eye,[-.065,headY+.025,-.175]);
+  addPart(g,new THREE.SphereGeometry(.018,8,6),eye,[.065,headY+.025,-.175]);
+  addPart(g,new THREE.BoxGeometry(.045,.012,.012),lip,[0,headY-.065,-.178]);
+
+  const armLen=.54, upper=.28;
+  function arm(side,mode){
+    const x=side*.34; const ag=new THREE.Group(); ag.position.set(x,torsoY+.22,0);
+    const sign=side;
+    let z=0, rx=0, rz=side*-.08;
+    if(mode==='raised')rx=-Math.PI*.95;
+    if(mode==='forward')rz=side*.95;
+    if(mode==='crossed'){rz=side*.95;rx=-Math.PI*.45;}
+    if(mode==='hip'){rz=side*.9;rx=Math.PI*.1;}
+    ag.rotation.set(rx,0,rz);
+    addPart(ag,new THREE.CylinderGeometry(.07,.085,upper,12),clothDark,[0,-.14,0]);
+    const fore=addPart(ag,new THREE.CylinderGeometry(.055,.07,.29,12),skin,[0,-.42,0]);
+    fore.rotation.z=side*.08;
+    addPart(ag,new THREE.SphereGeometry(.065,12,8),skin2,[0,-.59,0]);
+    for(let i=0;i<3;i++)addPart(ag,new THREE.CapsuleGeometry(.012,.055,3,6),skin2,[side*(i-1)*.018,-.63,-.015]);
+    g.add(ag); return ag;
+  }
+  arm(-1,a.leftArm||'down'); arm(1,a.rightArm||'down');
+  function leg(side,mode){
+    const lg=new THREE.Group(); lg.position.set(side*.13,hipY,0);
+    if(a.pose==='sitting'){lg.rotation.x=side*.0;}
+    if(a.pose==='sleeping'){lg.rotation.z=side*.18;}
+    addPart(lg,new THREE.CylinderGeometry(.095,.12,.52,12),clothDark,[0,-.26,0]);
+    const shin=addPart(lg,new THREE.CylinderGeometry(.07,.085,.48,12),skin,[0,-.72,0]);
+    if(a.pose==='sitting')lg.rotation.x=side*.72;
+    if(a.pose==='kneeling')lg.rotation.x=side*.55;
+    addPart(lg,new THREE.BoxGeometry(.16,.08,.3),shoe,[0,-.99,-.055]);
+    g.add(lg);return lg;
+  }
+  if(a.pose!=='sleeping'){leg(-1);leg(1);}else{
+    const lg=addPart(g,new THREE.CylinderGeometry(.085,.105,.9,12),clothDark,[.18,.48,0]);lg.rotation.z=-.12;
+    addPart(g,new THREE.BoxGeometry(.17,.08,.3),shoe,[.62,.46,0]);
+  }
+  if(a.pose==='sleeping'){g.rotation.z=-Math.PI/2;g.position.y=.25;}
+  if(a.pose==='sitting'){g.position.y=.05;}
+  if(a.head==='left')head.rotation.y=.5;
+  if(a.head==='right')head.rotation.y=-.5;
+  if(a.head==='up')head.rotation.x=-.35;
+  if(a.head==='down')head.rotation.x=.35;
   return g;
 }
-function buildBoxMesh(col,w,h,d){
-  const g=new THREE.Group();
-  const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(col),roughness:0.8});
-  const box=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);box.position.y=h/2;box.castShadow=true;box.receiveShadow=true;g.add(box);
-  const lm=new THREE.LineBasicMaterial({color:new THREE.Color(col).multiplyScalar(0.5),transparent:true,opacity:0.4});
-  const l=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(w,h,d)),lm);l.position.y=h/2;g.add(l);
+
+function buildBedMesh(col,action){
+  const g=new THREE.Group(), wood=mat('#5A4030',.72,.05), fabric=mat('#D7D0C6',.95), blanket=mat('#65758B',.82), dark=mat('#3A2B25',.8);
+  const w=action.style==='single'?1.25:2.05,d=1.0;
+  addPart(g,new THREE.BoxGeometry(w,.25,d),dark,[0,.62,0]);
+  addPart(g,new THREE.BoxGeometry(w,.22,d*.94),fabric,[0,.83,.02]);
+  addPart(g,new THREE.BoxGeometry(w,.12,.12),wood,[0,.98,-d/2+.08]);
+  if(action.headboard!=='off')addPart(g,new THREE.BoxGeometry(w,1.15,.10),wood,[0,1.35,d/2-.04]);
+  const n=Math.max(0,Math.min(3,Number(action.pillows)||0));
+  for(let i=0;i<n;i++)addPart(g,new THREE.BoxGeometry(.46,.13,.32),fabric,[-w/2+.32+i*.52,.99,d/2-.22]);
+  if(action.blanket!=='off')addPart(g,new THREE.BoxGeometry(w*.88,.08,d*.54),blanket,[0,.94,-.16]);
+  [[-w/2+.12,-d/2+.12],[w/2-.12,-d/2+.12],[-w/2+.12,d/2-.12],[w/2-.12,d/2-.12]].forEach(p=>addPart(g,new THREE.CylinderGeometry(.055,.07,.55,12),wood,[p[0],.32,p[1]]));
   return g;
 }
-function buildChairMesh(col){
-  const g=new THREE.Group();
-  const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(col),roughness:0.8});
-  const seat=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.06,0.5),mat);seat.position.y=0.44;g.add(seat);
-  const back=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.52,0.05),mat);back.position.set(0,0.72,-0.23);g.add(back);
-  [[0.2,0.22],[-0.2,0.22],[0.2,-0.22],[-0.2,-0.22]].forEach(([x,z])=>{
-    const leg=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.44,0.05),mat);leg.position.set(x,0.22,z);g.add(leg);
-  });
+function buildChairMesh(col,action){
+  const g=new THREE.Group(), wood=mat('#8B6040',.75), fabric=mat(col,.9);
+  const arm=action.arms==='on', seatY=.52;
+  addPart(g,new THREE.BoxGeometry(.58,.09,.55),fabric,[0,seatY,0]);
+  addPart(g,new THREE.BoxGeometry(.58,.62,.08),fabric,[0,.83,-.235]);
+  if(arm){[-1,1].forEach(s=>{addPart(g,new THREE.BoxGeometry(.07,.32,.48),wood,[s*.34,.68,0]);addPart(g,new THREE.BoxGeometry(.08,.07,.5),wood,[s*.34,.84,0]);});}
+  [[-.23,-.2],[.23,-.2],[-.23,.2],[.23,.2]].forEach(p=>addPart(g,new THREE.CylinderGeometry(.035,.05,.52,10),wood,[p[0],.26,p[1]]));
+  if(action.cushion!=='off')addPart(g,new THREE.BoxGeometry(.5,.055,.47),mat('#B7A38E',.98),[0,.59,.01]);
   return g;
 }
-function buildCarMesh(col){
-  const g=new THREE.Group();
-  const mat=new THREE.MeshStandardMaterial({color:new THREE.Color(col),roughness:0.4,metalness:0.4});
-  const bm=new THREE.Mesh(new THREE.BoxGeometry(4.2,0.9,1.8),mat);bm.position.y=0.6;g.add(bm);
-  const cab=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.7,1.7),mat);cab.position.set(-0.3,1.35,0);g.add(cab);
-  const wmat=new THREE.MeshStandardMaterial({color:0x222222,roughness:0.9});
-  [[1.4,-1.0],[1.4,1.0],[-1.4,-1.0],[-1.4,1.0]].forEach(([x,z])=>{
-    const w=new THREE.Mesh(new THREE.CylinderGeometry(0.38,0.38,0.22,12),wmat);
-    w.rotation.x=Math.PI/2;w.position.set(x,0.38,z);g.add(w);
-  });
+function buildSofaMesh(col,action){
+  const g=new THREE.Group(), m=mat(col,.88), dark=mat(new THREE.Color(col).multiplyScalar(.65),.9);
+  addPart(g,new THREE.BoxGeometry(2.6,.42,.85),m,[0,.5,0]);
+  addPart(g,new THREE.BoxGeometry(2.65,.72,.18),dark,[0,1.0,.31]);
+  addPart(g,new THREE.BoxGeometry(.2,.82,.9),dark,[-1.2,.78,0]);addPart(g,new THREE.BoxGeometry(.2,.82,.9),dark,[1.2,.78,0]);
+  if(action.cushions!=='off')[-.72,0,.72].forEach(x=>addPart(g,new THREE.BoxGeometry(.68,.18,.62),m,[x,.76,-.03]));
+  return g;
+}
+function buildTableMesh(col,action){
+  const g=new THREE.Group(), top=mat(action.top==='glass'?'#8FB7C5':col,.6,action.top==='glass'?.15:.02), metal=mat('#3B3B3B',.45,.55);
+  addPart(g,new THREE.BoxGeometry(1.65,.12,.95),top,[0,.8,0]);
+  [[-.68,-.34],[.68,-.34],[-.68,.34],[.68,.34]].forEach(p=>addPart(g,new THREE.CylinderGeometry(.045,.06,.78,12),action.legs==='metal'?metal:top,[p[0],.4,p[1]]));
+  return g;
+}
+function buildDoorMesh(col,action){
+  const g=new THREE.Group(), wood=mat(action.style==='glass'?'#788A92':col,.75), dark=mat('#33251D',.75);
+  addPart(g,new THREE.BoxGeometry(.95,2.15,.10),wood,[0,1.075,0]);
+  addPart(g,new THREE.BoxGeometry(.68,1.82,.025),mat(new THREE.Color(col).multiplyScalar(.78),.8),[0,1.15,-.055]);
+  addPart(g,new THREE.CylinderGeometry(.045,.045,.08,12),dark,[.32,.98,-.09],[Math.PI/2,0,0]);
+  const open=(Number(action.open)||0)*DEG;g.rotation.y=-open;
+  return g;
+}
+function buildWindowMesh(col,action){
+  const g=new THREE.Group(), frame=mat('#D4D0C8',.65), glass=mat('#7DB8CF',.18,.1);
+  addPart(g,new THREE.BoxGeometry(1.5,1.1,.10),frame,[0,1.3,0]);
+  addPart(g,new THREE.BoxGeometry(1.28,.88,.035),glass,[0,1.3,-.065]);
+  addPart(g,new THREE.BoxGeometry(.035,.88,.045),frame,[0,1.3,-.09]);addPart(g,new THREE.BoxGeometry(1.28,.035,.045),frame,[0,1.3,-.09]);
+  const open=(Number(action.open)||0)*.35;g.children.forEach(m=>{if(m.position.x>0.01)m.position.x+=open;});
+  if(action.curtains==='on'){
+    addPart(g,new THREE.BoxGeometry(.25,1.35,.08),mat('#B9A58F',.92),[-.78,1.3,.02]);addPart(g,new THREE.BoxGeometry(.25,1.35,.08),mat('#B9A58F',.92),[.78,1.3,.02]);
+  }
+  return g;
+}
+function buildPhoneMesh(col,action){
+  const g=new THREE.Group(), body=mat('#20242A',.32,.35), screen=mat(action.screen==='on'?'#5CB8E6':'#08090B',.18,.05), edge=mat(col,.42,.45);
+  addPart(g,new THREE.BoxGeometry(.16,.30,.035),body,[0,.17,0]);
+  addPart(g,new THREE.BoxGeometry(.135,.235,.012),screen,[0,.175,-.024]);
+  addPart(g,new THREE.BoxGeometry(.025,.025,.008),screen,[0,.29,-.033]);
+  if(action.case==='on')addPart(g,new THREE.BoxGeometry(.175,.32,.04),edge,[0,.17,.002]);
+  return g;
+}
+function buildLaptopMesh(col,action){
+  const g=new THREE.Group(), body=mat('#30343A',.38,.55), screen=mat(action.screen==='on'?'#4B9FC4':'#0C1014',.2,.15);
+  addPart(g,new THREE.BoxGeometry(.9,.045,.62),body,[0,.04,0]);
+  const lid=addPart(g,new THREE.BoxGeometry(.9,.58,.045),body,[0,.34,.29]);
+  lid.rotation.x=-(Number(action.open)||105)*DEG;
+  addPart(g,new THREE.BoxGeometry(.78,.46,.012),screen,[0,.34,.265]);
+  return g;
+}
+function buildCarMesh(col,action){
+  const g=new THREE.Group(), body=mat(col,.38,.48), trim=mat('#181A1C',.28,.65), glass=mat('#263D48',.15,.3), tire=mat('#171717',.9), lamp=mat(action.lights==='on'?'#FFF2B0':'#555',.22,.2), red=mat(action.lights==='on'?'#E33A32':'#401515',.3,.15);
+  addPart(g,new THREE.BoxGeometry(3.8,.72,1.72),body,[0,.63,0]);
+  addPart(g,new THREE.BoxGeometry(2.05,.68,1.58),body,[-.18,1.18,0]);
+  addPart(g,new THREE.BoxGeometry(1.75,.46,.025),glass,[-.22,1.2,-.805],[0,0,0]);
+  addPart(g,new THREE.BoxGeometry(1.65,.43,.025),glass,[-.22,1.2,.805],[0,Math.PI,0]);
+  addPart(g,new THREE.BoxGeometry(.7,.28,.03),glass,[.78,1.18,-.805]);addPart(g,new THREE.BoxGeometry(.7,.28,.03),glass,[.78,1.18,.805]);
+  [[1.35,-.88],[1.35,.88],[-1.35,-.88],[-1.35,.88]].forEach(p=>{const w=addPart(g,new THREE.CylinderGeometry(.39,.39,.24,20),tire,p,[Math.PI/2,0,0]);addPart(g,new THREE.CylinderGeometry(.18,.18,.25,16),trim,p,[Math.PI/2,0,0]);});
+  addPart(g,new THREE.BoxGeometry(.22,.16,.035),lamp,[1.91,-0+0.69,-.62]);addPart(g,new THREE.BoxGeometry(.22,.16,.035),lamp,[1.91,.69,.62]);
+  addPart(g,new THREE.BoxGeometry(.18,.15,.035),red,[-1.91,.69,-.62]);addPart(g,new THREE.BoxGeometry(.18,.15,.035),red,[-1.91,.69,.62]);
+  if(action.doors==='open'){[-.86,.86].forEach(z=>{const d=addPart(g,new THREE.BoxGeometry(1.05,.62,.035),body,[.05,.82,z]);d.rotation.x=(z>0?-1:1)*.55;});}
   return g;
 }
 const OBJ_BUILDERS={
-  man:col=>buildHumanoidMesh(col,1.8),woman:col=>buildHumanoidMesh(col,1.65),
-  child:col=>buildHumanoidMesh(col,1.2),bed:col=>buildBoxMesh(col,2.0,0.55,1.0),
-  chair:col=>buildChairMesh(col),sofa:col=>buildBoxMesh(col,2.0,0.8,0.8),
-  table:col=>buildBoxMesh(col,1.4,0.75,0.8),door:col=>buildBoxMesh(col,0.9,2.1,0.08),
-  window:col=>buildBoxMesh(col,1.2,1.0,0.08),phone:col=>buildBoxMesh(col,0.07,0.15,0.01),
-  laptop:col=>buildBoxMesh(col,0.35,0.25,0.02),car:col=>buildCarMesh(col),
+  man:(col,a)=>buildHumanoidMesh(col,1.8,'man',a),woman:(col,a)=>buildHumanoidMesh(col,1.68,'woman',a),child:(col,a)=>buildHumanoidMesh(col,1.25,'child',a),
+  bed:(col,a)=>buildBedMesh(col,a),chair:(col,a)=>buildChairMesh(col,a),sofa:(col,a)=>buildSofaMesh(col,a),table:(col,a)=>buildTableMesh(col,a),
+  door:(col,a)=>buildDoorMesh(col,a),window:(col,a)=>buildWindowMesh(col,a),phone:(col,a)=>buildPhoneMesh(col,a),laptop:(col,a)=>buildLaptopMesh(col,a),car:(col,a)=>buildCarMesh(col,a)
 };
-
 function buildObjectMesh(obj){
+  ensureObjectActions(obj);
   const cat=OBJ_CATALOGUE.find(o=>o.id===obj.type)||{color:'#8B93A3'};
-  const builder=OBJ_BUILDERS[obj.type]||(col=>buildBoxMesh(col,0.4,0.4,0.4));
-  const g=builder(cat.color);
-  g.userData.objId=obj.id;
-  applyObjectPosition(g,obj);
-  g.rotation.set((obj.rot.x||0)*DEG,(obj.rot.y||0)*DEG,(obj.rot.z||0)*DEG);
-  const scale=obj.scale||1;
-  g.scale.setScalar(scale);
-  g.visible=obj.visible!==false;
-  // selection ring
-  const ring=new THREE.Mesh(
-    new THREE.TorusGeometry(0.6,0.025,8,32),
-    new THREE.MeshStandardMaterial({color:0xF5B301,emissive:0xF5B301,emissiveIntensity:0.5})
-  );
-  ring.rotation.x=Math.PI/2;ring.position.y=0.02;ring.visible=false;ring.userData.isSelectionRing=true;
-  g.add(ring);
-  scene.add(g);objectMeshes[obj.id]=g;
-  return g;
+  const builder=OBJ_BUILDERS[obj.type]||(col=>buildBoxMesh(col,.4,.4,.4));
+  const g=builder(cat.color,obj.action);
+  g.userData.objId=obj.id;applyObjectPosition(g,obj);
+  g.rotation.set((obj.rot.x||0)*DEG,(obj.rot.y||0)*DEG,(obj.rot.z||0)*DEG);g.scale.setScalar(obj.scale||1);g.visible=obj.visible!==false;
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(.72,.025,8,32),new THREE.MeshStandardMaterial({color:0xF5B301,emissive:0xF5B301,emissiveIntensity:.5}));
+  ring.rotation.x=Math.PI/2;ring.position.y=.02;ring.visible=false;ring.userData.isSelectionRing=true;g.add(ring);
+  scene.add(g);objectMeshes[obj.id]=g;return g;
 }
-
+function rebuildObjectMesh(obj){
+  const old=objectMeshes[obj.id];if(old){scene.remove(old);delete objectMeshes[obj.id];}
+  return buildObjectMesh(obj);
+}
 function clampObjectPos(obj){
   if(!obj.pos)obj.pos={x:0,y:0,z:0};
-  obj.pos.x=Math.max(-ROOM_W/2+0.1,Math.min(ROOM_W/2-0.1,Number(obj.pos.x)||0));
-  obj.pos.y=Math.max(0.05,Math.min(ROOM_H-0.05,Number(obj.pos.y)||0.05));
-  obj.pos.z=Math.max(-ROOM_D/2+0.1,Math.min(ROOM_D/2-0.1,Number(obj.pos.z)||0));
+  obj.pos.x=Math.max(-ROOM_W/2+.1,Math.min(ROOM_W/2-.1,Number(obj.pos.x)||0));
+  obj.pos.y=Math.max(.05,Math.min(ROOM_H-.05,Number(obj.pos.y)||.05));
+  obj.pos.z=Math.max(-ROOM_D/2+.1,Math.min(ROOM_D/2-.1,Number(obj.pos.z)||0));
 }
 function applyObjectPosition(mesh,obj){
-  if(obj.pos){
-    clampObjectPos(obj);
-    mesh.position.set(obj.pos.x,obj.pos.y,obj.pos.z);
-    return;
-  }
-  const god=STATE.world.godEntities.find(g=>g.id===obj.godId);
-  if(god){
-    obj.pos={x:god.pos.x,y:god.pos.y,z:god.pos.z};
-    clampObjectPos(obj);
-    mesh.position.set(obj.pos.x,obj.pos.y,obj.pos.z);
-  }
+  if(obj.pos){clampObjectPos(obj);mesh.position.set(obj.pos.x,obj.pos.y,obj.pos.z);return;}
+  const god=STATE.world.godEntities.find(g=>g.id===obj.godId);if(god){obj.pos={x:god.pos.x,y:god.pos.y,z:god.pos.z};clampObjectPos(obj);mesh.position.set(obj.pos.x,obj.pos.y,obj.pos.z);}
 }
-
 function updateObjectMesh(obj){
-  const m=objectMeshes[obj.id];if(!m)return;
-  applyObjectPosition(m,obj); // always re-lock position
-  m.rotation.set((obj.rot.x||0)*DEG,(obj.rot.y||0)*DEG,(obj.rot.z||0)*DEG);
-  m.scale.setScalar(obj.scale||1);
-  m.visible=obj.visible!==false;
+  ensureObjectActions(obj);const m=objectMeshes[obj.id];if(!m)return;
+  applyObjectPosition(m,obj);m.rotation.set((obj.rot.x||0)*DEG,(obj.rot.y||0)*DEG,(obj.rot.z||0)*DEG);m.scale.setScalar(obj.scale||1);m.visible=obj.visible!==false;
 }
-
 function syncObjectMeshes(){
-  Object.keys(objectMeshes).forEach(id=>{
-    if(!STATE.world.objects.find(o=>o.id===id)){scene.remove(objectMeshes[id]);delete objectMeshes[id];}
-  });
-  STATE.world.objects.forEach(obj=>{
-    if(!objectMeshes[obj.id])buildObjectMesh(obj);
-    else updateObjectMesh(obj);
-  });
-  STATE.world.objects.forEach(obj=>{
-    const m=objectMeshes[obj.id];if(!m)return;
-    const ring=m.children.find(c=>c.userData.isSelectionRing);
-    if(ring)ring.visible=!!(STATE.ui.selectedObj&&STATE.ui.selectedObj.id===obj.id);
-  });
+  Object.keys(objectMeshes).forEach(id=>{if(!STATE.world.objects.find(o=>o.id===id)){scene.remove(objectMeshes[id]);delete objectMeshes[id];}});
+  STATE.world.objects.forEach(obj=>{ensureObjectActions(obj);if(!objectMeshes[obj.id])buildObjectMesh(obj);else updateObjectMesh(obj);});
+  STATE.world.objects.forEach(obj=>{const m=objectMeshes[obj.id];if(!m)return;const ring=m.children.find(c=>c.userData.isSelectionRing);if(ring)ring.visible=!!(STATE.ui.selectedObj&&STATE.ui.selectedObj.id===obj.id);});
 }
-
-function toggleObjectMeshVisibility(){
-  const show=STATE.ui.stage==='object'||STATE.ui.stage==='shot';
-  if(!show){Object.values(objectMeshes).forEach(m=>{if(m)m.visible=false;});return;}
-  syncObjectMeshes();
-}
+function toggleObjectMeshVisibility(){const show=STATE.ui.stage==='object'||STATE.ui.stage==='shot';if(!show){Object.values(objectMeshes).forEach(m=>{if(m)m.visible=false;});return;}syncObjectMeshes();}
 
 // ── FREE-FLY CAMERA ────────────────────────────────────────────
 const keys={};
@@ -1971,6 +2081,27 @@ function updateObjectDetail(){
   const el=document.getElementById('obj-detail-wrap');
   const obj=STATE.ui.selectedObj;
   if(!obj){el.innerHTML='<div class="empty-msg">Select an object to adjust it.</div>';return;}
+  ensureObjectActions(obj);
+  const a=obj.action;
+  const isChar=['man','woman','child'].includes(obj.type);
+  const actionPanel=isChar?`
+    <div class="ctrl-row" style="background:var(--panel2);padding:9px;border-radius:7px">
+      <div class="ctrl-label">Character Action</div>
+      <div style="font:9px var(--mono);color:var(--dim);margin:4px 0 7px">Articulated procedural pose. Changes are stored with the object.</div>
+      <select id="obj-action-pose" style="width:100%;margin-bottom:6px">${['standing','sitting','sleeping','kneeling'].map(v=>`<option value="${v}" ${a.pose===v?'selected':''}>${v[0].toUpperCase()+v.slice(1)}</option>`).join('')}</select>
+      <div class="rot-axis-row"><span class="rot-axis-label">Left arm</span><select id="obj-action-left" style="flex:1">${['down','raised','forward','crossed','hip'].map(v=>`<option value="${v}" ${a.leftArm===v?'selected':''}>${v}</option>`).join('')}</select></div>
+      <div class="rot-axis-row"><span class="rot-axis-label">Right arm</span><select id="obj-action-right" style="flex:1">${['down','raised','forward','crossed','hip'].map(v=>`<option value="${v}" ${a.rightArm===v?'selected':''}>${v}</option>`).join('')}</select></div>
+      <div class="rot-axis-row"><span class="rot-axis-label">Head</span><select id="obj-action-head" style="flex:1">${['forward','left','right','up','down'].map(v=>`<option value="${v}" ${a.head===v?'selected':''}>${v}</option>`).join('')}</select></div>
+    </div>`:
+  obj.type==='bed'?`<div class="ctrl-row" style="background:var(--panel2);padding:9px;border-radius:7px"><div class="ctrl-label">Bed Details</div><select id="obj-action-style" style="width:100%;margin:5px 0"><option value="double" ${a.style==='double'?'selected':''}>Double</option><option value="single" ${a.style==='single'?'selected':''}>Single</option></select><div class="rot-axis-row"><span class="rot-axis-label">Blanket</span><select id="obj-action-blanket" style="flex:1"><option ${a.blanket==='on'?'selected':''}>on</option><option ${a.blanket==='off'?'selected':''}>off</option></select></div><div class="rot-axis-row"><span class="rot-axis-label">Pillows</span><input id="obj-action-pillows" type="range" min="0" max="3" step="1" value="${a.pillows}" style="flex:1"><span class="rot-axis-val" id="obj-action-pillows-val">${a.pillows}</span></div></div>`:
+  obj.type==='chair'?`<div class="ctrl-row" style="background:var(--panel2);padding:9px;border-radius:7px"><div class="ctrl-label">Chair Details</div><div class="rot-axis-row"><span class="rot-axis-label">Armrests</span><select id="obj-action-arms" style="flex:1"><option ${a.arms==='off'?'selected':''}>off</option><option ${a.arms==='on'?'selected':''}>on</option></select></div><div class="rot-axis-row"><span class="rot-axis-label">Cushion</span><select id="obj-action-cushion" style="flex:1"><option ${a.cushion==='on'?'selected':''}>on</option><option ${a.cushion==='off'?'selected':''}>off</option></select></div></div>`:
+  obj.type==='sofa'?`<div class="ctrl-row" style="background:var(--panel2);padding:9px;border-radius:7px"><div class="ctrl-label">Sofa Details</div><div class="rot-axis-row"><span class="rot-axis-label">Cushions</span><select id="obj-action-cushion" style="flex:1"><option ${a.cushions==='on'?'selected':''}>on</option><option ${a.cushions==='off'?'selected':''}>off</option></select></div></div>`:
+  obj.type==='table'?`<div class="ctrl-row" style="background:var(--panel2);padding:9px;border-radius:7px"><div class="ctrl-label">Table Details</div><div class="rot-axis-row"><span class="rot-axis-label">Top</span><select id="obj-action-top" style="flex:1"><option ${a.top==='wood'?'selected':''}>wood</option><option ${a.top==='glass'?'selected':''}>glass</option></select></div><div class="rot-axis-row"><span class="rot-axis-label">Legs</span><select id="obj-action-legs" style="flex:1"><option ${a.legs==='four'?'selected':''}>four</option><option ${a.legs==='metal'?'selected':''}>metal</option></select></div></div>`:
+  obj.type==='door'?`<div class="ctrl-row" style="background:var(--panel2);padding:9px;border-radius:7px"><div class="ctrl-label">Door Action</div><div class="rot-axis-row"><span class="rot-axis-label">Open</span><input id="obj-action-open" type="range" min="0" max="110" value="${a.open}" style="flex:1"><span class="rot-axis-val" id="obj-action-open-val">${a.open}°</span></div><div class="rot-axis-row"><span class="rot-axis-label">Handle</span><select id="obj-action-handle" style="flex:1"><option ${a.handle==='on'?'selected':''}>on</option><option ${a.handle==='off'?'selected':''}>off</option></select></div></div>`:
+  obj.type==='window'?`<div class="ctrl-row" style="background:var(--panel2);padding:9px;border-radius:7px"><div class="ctrl-label">Window Action</div><div class="rot-axis-row"><span class="rot-axis-label">Open</span><input id="obj-action-open" type="range" min="0" max="100" value="${a.open}" style="flex:1"><span class="rot-axis-val" id="obj-action-open-val">${a.open}%</span></div><div class="rot-axis-row"><span class="rot-axis-label">Curtains</span><select id="obj-action-curtains" style="flex:1"><option ${a.curtains==='off'?'selected':''}>off</option><option ${a.curtains==='on'?'selected':''}>on</option></select></div></div>`:
+  obj.type==='phone'?`<div class="ctrl-row" style="background:var(--panel2);padding:9px;border-radius:7px"><div class="ctrl-label">Phone Details</div><div class="rot-axis-row"><span class="rot-axis-label">Screen</span><select id="obj-action-screen" style="flex:1"><option ${a.screen==='on'?'selected':''}>on</option><option ${a.screen==='off'?'selected':''}>off</option></select></div><div class="rot-axis-row"><span class="rot-axis-label">Case</span><select id="obj-action-case" style="flex:1"><option ${a.case==='on'?'selected':''}>on</option><option ${a.case==='off'?'selected':''}>off</option></select></div></div>`:
+  obj.type==='laptop'?`<div class="ctrl-row" style="background:var(--panel2);padding:9px;border-radius:7px"><div class="ctrl-label">Laptop Details</div><div class="rot-axis-row"><span class="rot-axis-label">Lid</span><input id="obj-action-open" type="range" min="0" max="135" value="${a.open}" style="flex:1"><span class="rot-axis-val" id="obj-action-open-val">${a.open}°</span></div><div class="rot-axis-row"><span class="rot-axis-label">Screen</span><select id="obj-action-screen" style="flex:1"><option ${a.screen==='on'?'selected':''}>on</option><option ${a.screen==='off'?'selected':''}>off</option></select></div></div>`:
+  obj.type==='car'?`<div class="ctrl-row" style="background:var(--panel2);padding:9px;border-radius:7px"><div class="ctrl-label">Vehicle Actions</div><div class="rot-axis-row"><span class="rot-axis-label">Doors</span><select id="obj-action-doors" style="flex:1"><option ${a.doors==='closed'?'selected':''}>closed</option><option ${a.doors==='open'?'selected':''}>open</option></select></div><div class="rot-axis-row"><span class="rot-axis-label">Lights</span><select id="obj-action-lights" style="flex:1"><option ${a.lights==='off'?'selected':''}>off</option><option ${a.lights==='on'?'selected':''}>on</option></select></div><div class="rot-axis-row"><span class="rot-axis-label">Steering</span><input id="obj-action-steering" type="range" min="-35" max="35" value="${a.steering}" style="flex:1"><span class="rot-axis-val" id="obj-action-steering-val">${a.steering}°</span></div></div>`:'';
   el.innerHTML=`
     <div class="obj-assign-panel">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
@@ -1979,6 +2110,7 @@ function updateObjectDetail(){
       </div>
       <div style="font:10px var(--mono);color:var(--dim)">Type: <b style="color:var(--text)">${obj.type}</b></div>
     </div>
+    ${actionPanel}
     <div class="ctrl-row" style="background:var(--panel2);padding:8px;border-radius:7px">
       <div class="ctrl-label">Object Position</div>
       <div style="font:9px var(--mono);color:var(--dim);margin-bottom:6px">Absolute room position. The object can move anywhere inside the floor-to-ceiling boundaries.</div>
@@ -2026,6 +2158,14 @@ function updateObjectDetail(){
     </div>
     <div class="divider"></div>
     <button class="btn-action danger" id="btn-remove-obj"><span class="ico">×</span> Remove Object</button>`;
+
+  const actionInputs=[
+    ['obj-action-pose','pose'],['obj-action-left','leftArm'],['obj-action-right','rightArm'],['obj-action-head','head'],
+    ['obj-action-style','style'],['obj-action-blanket','blanket'],['obj-action-arms','arms'],['obj-action-cushion','cushion'],['obj-action-top','top'],['obj-action-legs','legs'],
+    ['obj-action-handle','handle'],['obj-action-curtains','curtains'],['obj-action-screen','screen'],['obj-action-case','case'],['obj-action-doors','doors'],['obj-action-lights','lights']
+  ];
+  actionInputs.forEach(([id,key])=>{const n=document.getElementById(id);if(n)n.addEventListener('input',e=>{ensureObjectActions(obj);obj.action[key]=e.target.value;rebuildObjectMesh(obj);updateUI();});});
+  ['obj-action-open','obj-action-pillows','obj-action-steering'].forEach(id=>{const n=document.getElementById(id);if(n)n.addEventListener('input',e=>{ensureObjectActions(obj);const key=id.includes('pillows')?'pillows':id.includes('steering')?'steering':'open';obj.action[key]=+e.target.value;const v=document.getElementById(id+'-val');if(v)v.textContent=(key==='pillows'?obj.action[key]:obj.action[key]+'°');rebuildObjectMesh(obj);});});
 
   ['x','y','z'].forEach(axis=>{
     const input=document.getElementById('obj-pos-'+axis);
