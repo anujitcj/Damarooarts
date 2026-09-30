@@ -51,6 +51,8 @@ select{appearance:none;cursor:pointer}
 .hud{position:absolute;top:12px;left:50%;transform:translateX(-50%);pointer-events:none;display:flex;gap:6px}
 .hud-pill{background:rgba(14,16,20,.8);border:1px solid rgba(42,47,58,.8);border-radius:99px;padding:5px 12px;font:10px var(--mono);color:var(--soft);letter-spacing:.08em;white-space:nowrap}
 .hud-pill b{color:var(--text)}
+.hud-pill.fly-enter{pointer-events:auto;cursor:pointer;color:var(--text);border-color:var(--accent)}
+#three-canvas.fly-active{cursor:crosshair}
 .cam-pos-hud{position:absolute;bottom:14px;left:14px;pointer-events:none;background:rgba(14,16,20,.8);border:1px solid rgba(42,47,58,.8);border-radius:9px;padding:10px 14px;font:10px var(--mono);line-height:1.9;color:var(--soft)}
 .cam-pos-hud b{color:var(--text);display:inline-block;width:36px}
 .cam-pos-hud span{color:var(--accent)}
@@ -975,21 +977,43 @@ function toggleObjectMeshVisibility(){
 // ── FREE-FLY CAMERA ────────────────────────────────────────────
 const keys={};
 let isPointerLocked=false;
+let isFlyActive=false;
 let camPitch=0,camYaw=0,camRoll=0;
 let playbackCamActive=false,objCamPathActive=false;
 
-document.addEventListener('keydown',e=>{keys[e.code]=true;});
+document.addEventListener('keydown',e=>{
+  keys[e.code]=true;
+  if(e.code==='Escape' && isFlyActive){
+    isFlyActive=false;
+    updateFlyUI();
+    if(document.pointerLockElement)document.exitPointerLock();
+  }
+});
 document.addEventListener('keyup',e=>{keys[e.code]=false;});
+
+function updateFlyUI(){
+  const active=isPointerLocked||isFlyActive;
+  document.getElementById('crosshair').classList.toggle('visible',active);
+  document.getElementById('hud-fly-hint').textContent=active?'CAMERA ACTIVE · ESC TO EXIT':'ENTER CAMERA · CLICK';
+  canvas.classList.toggle('fly-active',active);
+}
 
 function enterCameraFly(){
   if(STATE.ui.stage!=='camera')return;
   if(playbackCamActive||STATE.ui.objCamMode==='path')return;
-  const target=canvas;
-  if(!document.pointerLockElement){
-    const req=target.requestPointerLock?.();
-    if(req && typeof req.catch==='function') req.catch(()=>showToast('Browser blocked camera control. Click the 3D room again to allow it.'));
+  isFlyActive=true;
+  canvas.focus?.();
+  updateFlyUI();
+  // Pointer lock is optional. Ordinary mouse movement remains the fallback.
+  if(!document.pointerLockElement && canvas.requestPointerLock){
+    try{
+      const req=canvas.requestPointerLock();
+      if(req && typeof req.catch==='function') req.catch(()=>{});
+    }catch(_){}
   }
 }
+
+canvas.tabIndex=0;
 canvas.addEventListener('click',enterCameraFly);
 document.getElementById('viewport').addEventListener('click',e=>{
   if(e.target===canvas || e.target.id==='hud-fly-hint') enterCameraFly();
@@ -997,18 +1021,23 @@ document.getElementById('viewport').addEventListener('click',e=>{
 
 document.addEventListener('pointerlockchange',()=>{
   isPointerLocked=document.pointerLockElement===canvas;
-  document.getElementById('crosshair').classList.toggle('visible',isPointerLocked);
-  document.getElementById('hud-fly-hint').textContent=isPointerLocked?'ESC · RELEASE CAMERA':'ENTER CAMERA · CLICK';
+  if(isPointerLocked)isFlyActive=true;
+  updateFlyUI();
 });
 
 document.addEventListener('mousemove',e=>{
-  if(!isPointerLocked)return;
+  if(!isFlyActive)return;
   const sens=0.0015;
   camYaw-=e.movementX*sens;
   camPitch-=e.movementY*sens;
   camPitch=clamp(camPitch,-Math.PI/2+0.01,Math.PI/2-0.01);
   applyCameraRotation();
 });
+
+document.addEventListener('pointerdown',e=>{
+  if(isFlyActive && e.button===2)e.preventDefault();
+});
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
 
 function applyCameraRotation(){
   camera.quaternion.setFromEuler(new THREE.Euler(camPitch,camYaw,camRoll,'YXZ'));
@@ -1038,7 +1067,7 @@ function tickFly(dt){
   const stage=STATE.ui.stage;
   const blocked=playbackCamActive||objCamPathActive||
     (stage==='shot'&&activeShot()&&activeShot().timeline.playing);
-  if(!isPointerLocked||blocked)return;
+  if(!isFlyActive||blocked)return;
   const speed=STATE.ui.flySpeed*(keys['ShiftLeft']||keys['ShiftRight']?3:1)*dt;
   const dir=new THREE.Vector3();camera.getWorldDirection(dir);
   const right=new THREE.Vector3();right.crossVectors(dir,camera.up).normalize();
@@ -1221,7 +1250,7 @@ let playbackRAF=null,playbackStartTime=null,playbackStartT=0;
 function startPlayback(){
   const shot=activeShot();
   if(!shot||shot.cameraPath.anchors.length<2){showToast('Need at least 2 anchors');return;}
-  if(document.pointerLockElement)document.exitPointerLock();
+  isFlyActive=false; updateFlyUI(); if(document.pointerLockElement)document.exitPointerLock();
   playbackCamActive=true;
   const durTotal=totalDuration();
   if(shot.playbackT>=durTotal)shot.playbackT=0;
@@ -1272,7 +1301,7 @@ let objPlaybackRAF=null,objPlaybackStartTime=null,objPlaybackStartT=0;
 
 function startObjPlayback(){
   const shot=activeShot();if(!shot||shot.cameraPath.anchors.length<2)return;
-  if(document.pointerLockElement)document.exitPointerLock();
+  isFlyActive=false; updateFlyUI(); if(document.pointerLockElement)document.exitPointerLock();
   objCamPathActive=true;
   if(shot.playbackT>=totalDuration())shot.playbackT=0;
   objPlaybackStartTime=performance.now();objPlaybackStartT=shot.playbackT;
@@ -1519,7 +1548,7 @@ let shotPlayRAF=null,shotPlayStartTime=null,shotPlayStartFrame=0;
 
 function startShotPlay(){
   const shot=activeShot();if(!shot||totalFrames()<1)return;
-  if(document.pointerLockElement)document.exitPointerLock();
+  isFlyActive=false; updateFlyUI(); if(document.pointerLockElement)document.exitPointerLock();
   shot.timeline.playing=true;
   shotPlayStartTime=performance.now();
   shotPlayStartFrame=shot.timeline.currentFrame;
