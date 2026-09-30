@@ -943,8 +943,8 @@ function buildHumanoidMesh(col,h,type,action){
   if(a.pose==='sitting'){hipY=.52;torsoY=.9;headY=1.5;}
   if(a.pose==='sleeping'){hipY=.42;torsoY=.55;headY=.72;}
   if(a.pose==='kneeling'){hipY=.55;torsoY=1.0;headY=1.62;}
-  const torso=addPart(g,new THREE.CapsuleGeometry(.27,.62,5,12),cloth,[0,torsoY,0]);
-  torso.scale.set(1,.95,.62);
+  const torso=addPart(g,new THREE.CylinderGeometry(.29,.25,.82,16),cloth,[0,torsoY,0]);
+torso.scale.set(1,.95,.72);
   addPart(g,new THREE.CylinderGeometry(.22,.25,.18,16),clothDark,[0,torsoY-.43,0]);
   const neck=addPart(g,cyl(.085,.1,.12,12),skin,[0,headY-.17,0]);
   const head=addPart(g,new THREE.SphereGeometry(.19,20,14),skin2,[0,headY,0]);
@@ -975,7 +975,14 @@ function buildHumanoidMesh(col,h,type,action){
     const fore=addPart(ag,new THREE.CylinderGeometry(.055,.07,.29,12),skin,[0,-.42,0]);
     fore.rotation.z=side*.08;
     addPart(ag,new THREE.SphereGeometry(.065,12,8),skin2,[0,-.59,0]);
-    for(let i=0;i<3;i++)addPart(ag,new THREE.CapsuleGeometry(.012,.055,3,6),skin2,[side*(i-1)*.018,-.63,-.015]);
+   for(let i=0;i<3;i++){
+  addPart(
+    ag,
+    new THREE.CylinderGeometry(.012,.012,.055,8),
+    skin2,
+    [side*(i-1)*.018,-.63,-.015]
+  );
+}
     g.add(ag); return ag;
   }
   arm(-1,a.leftArm||'down'); arm(1,a.rightArm||'down');
@@ -1005,13 +1012,16 @@ function buildHumanoidMesh(col,h,type,action){
 
 function buildBedMesh(col,action){
   const g=new THREE.Group(), wood=mat('#5A4030',.72,.05), fabric=mat('#D7D0C6',.95), blanket=mat('#65758B',.82), dark=mat('#3A2B25',.8);
-  const w=action.style==='single'?1.25:2.05,d=1.0;
+  const w=action.style==='single'?1.55:2.55,d=1.35;
   addPart(g,new THREE.BoxGeometry(w,.25,d),dark,[0,.62,0]);
   addPart(g,new THREE.BoxGeometry(w,.22,d*.94),fabric,[0,.83,.02]);
   addPart(g,new THREE.BoxGeometry(w,.12,.12),wood,[0,.98,-d/2+.08]);
   if(action.headboard!=='off')addPart(g,new THREE.BoxGeometry(w,1.15,.10),wood,[0,1.35,d/2-.04]);
   const n=Math.max(0,Math.min(3,Number(action.pillows)||0));
-  for(let i=0;i<n;i++)addPart(g,new THREE.BoxGeometry(.46,.13,.32),fabric,[-w/2+.32+i*.52,.99,d/2-.22]);
+  for(let i=0;i<n;i++){
+  const px=-((n-1)*.28)+i*.56;
+  addPart(g,new THREE.BoxGeometry(.52,.14,.38),fabric,[px,.99,d/2-.25]);
+}
   if(action.blanket!=='off')addPart(g,new THREE.BoxGeometry(w*.88,.08,d*.54),blanket,[0,.94,-.16]);
   [[-w/2+.12,-d/2+.12],[w/2-.12,-d/2+.12],[-w/2+.12,d/2-.12],[w/2-.12,d/2-.12]].forEach(p=>addPart(g,new THREE.CylinderGeometry(.055,.07,.55,12),wood,[p[0],.32,p[1]]));
   return g;
@@ -1028,10 +1038,21 @@ function buildChairMesh(col,action){
 }
 function buildSofaMesh(col,action){
   const g=new THREE.Group(), m=mat(col,.88), dark=mat(new THREE.Color(col).multiplyScalar(.65),.9);
-  addPart(g,new THREE.BoxGeometry(2.6,.42,.85),m,[0,.5,0]);
-  addPart(g,new THREE.BoxGeometry(2.65,.72,.18),dark,[0,1.0,.31]);
-  addPart(g,new THREE.BoxGeometry(.2,.82,.9),dark,[-1.2,.78,0]);addPart(g,new THREE.BoxGeometry(.2,.82,.9),dark,[1.2,.78,0]);
-  if(action.cushions!=='off')[-.72,0,.72].forEach(x=>addPart(g,new THREE.BoxGeometry(.68,.18,.62),m,[x,.76,-.03]));
+addPart(g,new THREE.BoxGeometry(1.95,.36,.72),m,[0,.44,0]);
+addPart(g,new THREE.BoxGeometry(2.02,.62,.16),dark,[0,.88,.27]);
+addPart(g,new THREE.BoxGeometry(.16,.72,.76),dark,[-.93,.68,0]);
+addPart(g,new THREE.BoxGeometry(.16,.72,.76),dark,[.93,.68,0]);
+
+if(action.cushions!=='off'){
+  [-.56,0,.56].forEach(x=>{
+    addPart(
+      g,
+      new THREE.BoxGeometry(.50,.16,.54),
+      m,
+      [x,.68,-.02]
+    );
+  });
+}
   return g;
 }
 function buildTableMesh(col,action){
@@ -1041,12 +1062,75 @@ function buildTableMesh(col,action){
   return g;
 }
 function buildDoorMesh(col,action){
-  const g=new THREE.Group(), wood=mat(action.style==='glass'?'#788A92':col,.75), dark=mat('#33251D',.75);
-  addPart(g,new THREE.BoxGeometry(.95,2.15,.10),wood,[0,1.075,0]);
-  addPart(g,new THREE.BoxGeometry(.68,1.82,.025),mat(new THREE.Color(col).multiplyScalar(.78),.8),[0,1.15,-.055]);
-  addPart(g,new THREE.CylinderGeometry(.045,.045,.08,12),dark,[.32,.98,-.09],[Math.PI/2,0,0]);
-  const open=(Number(action.open)||0)*DEG;g.rotation.y=-open;
+  const g=new THREE.Group();
+
+  const wood=mat(
+    action.style==='glass'?'#788A92':col,
+    .75
+  );
+
+  const inner=mat(
+    new THREE.Color(col).multiplyScalar(.78),
+    .8
+  );
+
+  const dark=mat('#33251D',.75);
+
+  // Door frame
+  addPart(
+    g,
+    new THREE.BoxGeometry(1.08,2.28,.14),
+    wood,
+    [0,1.14,.06]
+  );
+
+  // Actual moving door, pivoted from left hinge
+  const doorPivot=new THREE.Group();
+  doorPivot.position.set(-.47,0,0);
+
+  const door=addPart(
+    doorPivot,
+    new THREE.BoxGeometry(.94,2.12,.10),
+    wood,
+    [.47,1.06,0]
+  );
+
+  // Inner decorative panel
+  addPart(
+    doorPivot,
+    new THREE.BoxGeometry(.68,1.78,.025),
+    inner,
+    [.47,1.06,-.065]
+  );
+
+  // Handle
+  if(action.handle!=='off'){
+    addPart(
+      doorPivot,
+      new THREE.CylinderGeometry(.045,.045,.12,12),
+      dark,
+      [.77,.98,-.095],
+      [Math.PI/2,0,0]
+    );
+  }
+
+  // Hinge barrels
+  [0.35,1.05,1.75].forEach(y=>{
+    addPart(
+      doorPivot,
+      new THREE.CylinderGeometry(.035,.035,.14,10),
+      dark,
+      [.03,y,.01]
+    );
+  });
+
+  const open=Number(action.open)||0;
+  doorPivot.rotation.y=-open*DEG;
+
+  g.add(doorPivot);
+
   return g;
+}
 }
 function buildWindowMesh(col,action){
   const g=new THREE.Group(), frame=mat('#D4D0C8',.65), glass=mat('#7DB8CF',.18,.1);
@@ -1068,25 +1152,284 @@ function buildPhoneMesh(col,action){
   return g;
 }
 function buildLaptopMesh(col,action){
-  const g=new THREE.Group(), body=mat('#30343A',.38,.55), screen=mat(action.screen==='on'?'#4B9FC4':'#0C1014',.2,.15);
-  addPart(g,new THREE.BoxGeometry(.9,.045,.62),body,[0,.04,0]);
-  const lid=addPart(g,new THREE.BoxGeometry(.9,.58,.045),body,[0,.34,.29]);
-  lid.rotation.x=-(Number(action.open)||105)*DEG;
-  addPart(g,new THREE.BoxGeometry(.78,.46,.012),screen,[0,.34,.265]);
+  const g=new THREE.Group();
+
+  const body=mat('#252A30',.32,.62);
+  const edge=mat('#454B52',.28,.68);
+  const screenMat=mat(
+    action.screen==='on'?'#4B9FC4':'#080B0F',
+    .16,
+    .18
+  );
+  const keyboard=mat('#171A1E',.45,.25);
+  const keyMat=mat('#737980',.5,.18);
+  const trackpad=mat('#59616A',.38,.25);
+
+  // Lower chassis
+  addPart(
+    g,
+    new THREE.BoxGeometry(1.15,.075,.78),
+    body,
+    [0,.055,0]
+  );
+
+  // Slight upper bevel/edge
+  addPart(
+    g,
+    new THREE.BoxGeometry(1.08,.035,.70),
+    edge,
+    [0,.105,0]
+  );
+
+  // Keyboard bed
+  addPart(
+    g,
+    new THREE.BoxGeometry(.88,.018,.40),
+    keyboard,
+    [0,.125,-.08]
+  );
+
+  // Keyboard keys
+  for(let row=0;row<4;row++){
+    for(let i=0;i<9;i++){
+      const x=-.36+i*.09;
+      const z=-.22+row*.075;
+
+      addPart(
+        g,
+        new THREE.BoxGeometry(.065,.012,.045),
+        keyMat,
+        [x,.145,z]
+      );
+    }
+  }
+
+  // Trackpad
+  addPart(
+    g,
+    new THREE.BoxGeometry(.30,.012,.19),
+    trackpad,
+    [0,.148,.23]
+  );
+
+  // Screen pivot at the rear hinge
+  const lidPivot=new THREE.Group();
+  lidPivot.position.set(0,.11,.36);
+
+  // Screen outer shell
+  addPart(
+    lidPivot,
+    new THREE.BoxGeometry(1.15,.72,.055),
+    body,
+    [0,.36,0]
+  );
+
+  // Screen bezel
+  addPart(
+    lidPivot,
+    new THREE.BoxGeometry(1.00,.57,.018),
+    edge,
+    [0,.36,-.037]
+  );
+
+  // Display
+  addPart(
+    lidPivot,
+    new THREE.BoxGeometry(.91,.48,.012),
+    screenMat,
+    [0,.36,-.05]
+  );
+
+  // Webcam
+  addPart(
+    lidPivot,
+    new THREE.SphereGeometry(.018,8,6),
+    screenMat,
+    [0,.62,-.06]
+  );
+
+  // Logo
+  addPart(
+    lidPivot,
+    new THREE.CylinderGeometry(.06,.06,.012,20),
+    edge,
+    [0,.10,.035],
+    [Math.PI/2,0,0]
+  );
+
+  // Correct hinge rotation
+  const open=clamp(Number(action.open)||0,0,135);
+  lidPivot.rotation.x=-(open*DEG);
+
+  g.add(lidPivot);
+
   return g;
 }
+}
 function buildCarMesh(col,action){
-  const g=new THREE.Group(), body=mat(col,.38,.48), trim=mat('#181A1C',.28,.65), glass=mat('#263D48',.15,.3), tire=mat('#171717',.9), lamp=mat(action.lights==='on'?'#FFF2B0':'#555',.22,.2), red=mat(action.lights==='on'?'#E33A32':'#401515',.3,.15);
-  addPart(g,new THREE.BoxGeometry(3.8,.72,1.72),body,[0,.63,0]);
-  addPart(g,new THREE.BoxGeometry(2.05,.68,1.58),body,[-.18,1.18,0]);
-  addPart(g,new THREE.BoxGeometry(1.75,.46,.025),glass,[-.22,1.2,-.805],[0,0,0]);
-  addPart(g,new THREE.BoxGeometry(1.65,.43,.025),glass,[-.22,1.2,.805],[0,Math.PI,0]);
-  addPart(g,new THREE.BoxGeometry(.7,.28,.03),glass,[.78,1.18,-.805]);addPart(g,new THREE.BoxGeometry(.7,.28,.03),glass,[.78,1.18,.805]);
-  [[1.35,-.88],[1.35,.88],[-1.35,-.88],[-1.35,.88]].forEach(p=>{const w=addPart(g,new THREE.CylinderGeometry(.39,.39,.24,20),tire,p,[Math.PI/2,0,0]);addPart(g,new THREE.CylinderGeometry(.18,.18,.25,16),trim,p,[Math.PI/2,0,0]);});
-  addPart(g,new THREE.BoxGeometry(.22,.16,.035),lamp,[1.91,-0+0.69,-.62]);addPart(g,new THREE.BoxGeometry(.22,.16,.035),lamp,[1.91,.69,.62]);
-  addPart(g,new THREE.BoxGeometry(.18,.15,.035),red,[-1.91,.69,-.62]);addPart(g,new THREE.BoxGeometry(.18,.15,.035),red,[-1.91,.69,.62]);
-  if(action.doors==='open'){[-.86,.86].forEach(z=>{const d=addPart(g,new THREE.BoxGeometry(1.05,.62,.035),body,[.05,.82,z]);d.rotation.x=(z>0?-1:1)*.55;});}
+  const g=new THREE.Group();
+
+  const body=mat(col,.38,.48);
+  const trim=mat('#181A1C',.28,.65);
+  const glass=mat('#263D48',.15,.3);
+  const tire=mat('#171717',.92);
+  const hub=mat('#858585',.32,.65);
+  const lamp=mat(
+    action.lights==='on'?'#FFF2B0':'#555',
+    .22,
+    .2
+  );
+  const red=mat(
+    action.lights==='on'?'#E33A32':'#401515',
+    .3,
+    .15
+  );
+
+  // Smaller overall body
+  addPart(
+    g,
+    new THREE.BoxGeometry(3.0,.58,1.40),
+    body,
+    [0,.53,0]
+  );
+
+  // Cabin
+  addPart(
+    g,
+    new THREE.BoxGeometry(1.62,.58,1.28),
+    body,
+    [-.12,1.02,0]
+  );
+
+  // Front windshield
+  addPart(
+    g,
+    new THREE.BoxGeometry(1.25,.40,.025),
+    glass,
+    [.18,1.04,-.645]
+  );
+
+  // Rear windshield
+  addPart(
+    g,
+    new THREE.BoxGeometry(1.18,.38,.025),
+    glass,
+    [-.38,1.04,.645],
+    [0,Math.PI,0]
+  );
+
+  // Side windows
+  addPart(
+    g,
+    new THREE.BoxGeometry(.72,.36,.025),
+    glass,
+    [.55,1.02,-.655]
+  );
+
+  addPart(
+    g,
+    new THREE.BoxGeometry(.72,.36,.025),
+    glass,
+    [.55,1.02,.655]
+  );
+
+  // Wheels
+  [
+    [1.05,-.72],
+    [1.05,.72],
+    [-1.05,-.72],
+    [-1.05,.72]
+  ].forEach(([x,z])=>{
+    addPart(
+      g,
+      new THREE.CylinderGeometry(.30,.30,.20,20),
+      tire,
+      [x,.38,z],
+      [Math.PI/2,0,0]
+    );
+
+    addPart(
+      g,
+      new THREE.CylinderGeometry(.13,.13,.22,16),
+      hub,
+      [x,.38,z],
+      [Math.PI/2,0,0]
+    );
+  });
+
+  // Headlights
+  addPart(g,new THREE.BoxGeometry(.18,.13,.035),lamp,[1.52,.57,-.48]);
+  addPart(g,new THREE.BoxGeometry(.18,.13,.035),lamp,[1.52,.57,.48]);
+
+  // Tail lights
+  addPart(g,new THREE.BoxGeometry(.16,.12,.035),red,[-1.52,.57,-.48]);
+  addPart(g,new THREE.BoxGeometry(.16,.12,.035),red,[-1.52,.57,.48]);
+
+  // Dashboard
+  addPart(
+    g,
+    new THREE.BoxGeometry(.70,.12,1.05),
+    trim,
+    [.48,1.12,0]
+  );
+
+  // Steering wheel
+  const steeringPivot=new THREE.Group();
+  steeringPivot.position.set(.58,1.18,-.32);
+
+  const steeringWheel=new THREE.Mesh(
+    new THREE.TorusGeometry(.14,.025,10,24),
+    trim
+  );
+
+  // Wheel plane faces sideways toward driver
+  steeringWheel.rotation.y=Math.PI/2;
+
+  steeringPivot.add(steeringWheel);
+
+  // Steering hub
+  addPart(
+    steeringPivot,
+    new THREE.CylinderGeometry(.035,.035,.07,12),
+    hub,
+    [0,0,0],
+    [0,Math.PI/2,0]
+  );
+
+  // Steering spokes
+  for(let i=0;i<3;i++){
+    const spoke=new THREE.Mesh(
+      new THREE.BoxGeometry(.12,.018,.018),
+      trim
+    );
+
+    spoke.rotation.z=i*(Math.PI*2/3);
+    steeringPivot.add(spoke);
+  }
+
+  steeringPivot.rotation.x=(Number(action.steering)||0)*DEG;
+  g.add(steeringPivot);
+
+  // Open doors
+  if(action.doors==='open'){
+    [-.70,.70].forEach(z=>{
+      const d=new THREE.Group();
+      d.position.set(.05,z>0?.64:-.64,.82);
+      d.rotation.x=z>0?-0.55:0.55;
+
+      addPart(
+        d,
+        new THREE.BoxGeometry(.85,.55,.035),
+        body,
+        [0,0,0]
+      );
+
+      g.add(d);
+    });
+  }
+
   return g;
+}
 }
 const OBJ_BUILDERS={
   man:(col,a)=>buildHumanoidMesh(col,1.8,'man',a),woman:(col,a)=>buildHumanoidMesh(col,1.68,'woman',a),child:(col,a)=>buildHumanoidMesh(col,1.25,'child',a),
@@ -1607,7 +1950,7 @@ function addFreeObject(type){
   const obj={
     id:uid(),godId:null,label:(cat?cat.label:type)+' (free)',type,
     rot:{x:0,y:0,z:0},scale:1,visible:true,isFree:true,
-    pos:{x:(Math.random()-0.5)*6,y:0,z:(Math.random()-0.5)*6}
+    pos:{x:(Math.random()-0.5)*6,y:0.05,z:(Math.random()-0.5)*6}
   };
   STATE.world.objects.push(obj);
   STATE.ui.selectedObj=obj;
@@ -2095,7 +2438,7 @@ function updateObjectDetail(){
     </div>`:
   obj.type==='bed'?`<div class="ctrl-row" style="background:var(--panel2);padding:9px;border-radius:7px"><div class="ctrl-label">Bed Details</div><select id="obj-action-style" style="width:100%;margin:5px 0"><option value="double" ${a.style==='double'?'selected':''}>Double</option><option value="single" ${a.style==='single'?'selected':''}>Single</option></select><div class="rot-axis-row"><span class="rot-axis-label">Blanket</span><select id="obj-action-blanket" style="flex:1"><option ${a.blanket==='on'?'selected':''}>on</option><option ${a.blanket==='off'?'selected':''}>off</option></select></div><div class="rot-axis-row"><span class="rot-axis-label">Pillows</span><input id="obj-action-pillows" type="range" min="0" max="3" step="1" value="${a.pillows}" style="flex:1"><span class="rot-axis-val" id="obj-action-pillows-val">${a.pillows}</span></div></div>`:
   obj.type==='chair'?`<div class="ctrl-row" style="background:var(--panel2);padding:9px;border-radius:7px"><div class="ctrl-label">Chair Details</div><div class="rot-axis-row"><span class="rot-axis-label">Armrests</span><select id="obj-action-arms" style="flex:1"><option ${a.arms==='off'?'selected':''}>off</option><option ${a.arms==='on'?'selected':''}>on</option></select></div><div class="rot-axis-row"><span class="rot-axis-label">Cushion</span><select id="obj-action-cushion" style="flex:1"><option ${a.cushion==='on'?'selected':''}>on</option><option ${a.cushion==='off'?'selected':''}>off</option></select></div></div>`:
-  obj.type==='sofa'?`<div class="ctrl-row" style="background:var(--panel2);padding:9px;border-radius:7px"><div class="ctrl-label">Sofa Details</div><div class="rot-axis-row"><span class="rot-axis-label">Cushions</span><select id="obj-action-cushion" style="flex:1"><option ${a.cushions==='on'?'selected':''}>on</option><option ${a.cushions==='off'?'selected':''}>off</option></select></div></div>`:
+  obj.type==='sofa'?`<div class="ctrl-row" style="background:var(--panel2);padding:9px;border-radius:7px"><div class="ctrl-label">Sofa Details</div><div class="rot-axis-row"><span class="rot-axis-label">Cushions</span><select id="obj-action-cushions" style="flex:1"><option ${a.cushions==='on'?'selected':''}>on</option><option ${a.cushions==='off'?'selected':''}>off</option></select></div></div>`:
   obj.type==='table'?`<div class="ctrl-row" style="background:var(--panel2);padding:9px;border-radius:7px"><div class="ctrl-label">Table Details</div><div class="rot-axis-row"><span class="rot-axis-label">Top</span><select id="obj-action-top" style="flex:1"><option ${a.top==='wood'?'selected':''}>wood</option><option ${a.top==='glass'?'selected':''}>glass</option></select></div><div class="rot-axis-row"><span class="rot-axis-label">Legs</span><select id="obj-action-legs" style="flex:1"><option ${a.legs==='four'?'selected':''}>four</option><option ${a.legs==='metal'?'selected':''}>metal</option></select></div></div>`:
   obj.type==='door'?`<div class="ctrl-row" style="background:var(--panel2);padding:9px;border-radius:7px"><div class="ctrl-label">Door Action</div><div class="rot-axis-row"><span class="rot-axis-label">Open</span><input id="obj-action-open" type="range" min="0" max="110" value="${a.open}" style="flex:1"><span class="rot-axis-val" id="obj-action-open-val">${a.open}°</span></div><div class="rot-axis-row"><span class="rot-axis-label">Handle</span><select id="obj-action-handle" style="flex:1"><option ${a.handle==='on'?'selected':''}>on</option><option ${a.handle==='off'?'selected':''}>off</option></select></div></div>`:
   obj.type==='window'?`<div class="ctrl-row" style="background:var(--panel2);padding:9px;border-radius:7px"><div class="ctrl-label">Window Action</div><div class="rot-axis-row"><span class="rot-axis-label">Open</span><input id="obj-action-open" type="range" min="0" max="100" value="${a.open}" style="flex:1"><span class="rot-axis-val" id="obj-action-open-val">${a.open}%</span></div><div class="rot-axis-row"><span class="rot-axis-label">Curtains</span><select id="obj-action-curtains" style="flex:1"><option ${a.curtains==='off'?'selected':''}>off</option><option ${a.curtains==='on'?'selected':''}>on</option></select></div></div>`:
@@ -2160,8 +2503,10 @@ function updateObjectDetail(){
     <button class="btn-action danger" id="btn-remove-obj"><span class="ico">×</span> Remove Object</button>`;
 
   const actionInputs=[
-    ['obj-action-pose','pose'],['obj-action-left','leftArm'],['obj-action-right','rightArm'],['obj-action-head','head'],
-    ['obj-action-style','style'],['obj-action-blanket','blanket'],['obj-action-arms','arms'],['obj-action-cushion','cushion'],['obj-action-top','top'],['obj-action-legs','legs'],
+  ['obj-action-pose','pose'],['obj-action-left','leftArm'],['obj-action-right','rightArm'],['obj-action-head','head'],
+['obj-action-style','style'],['obj-action-blanket','blanket'],['obj-action-arms','arms'],
+['obj-action-cushions','cushions'],['obj-action-cushion','cushion'],
+['obj-action-top','top'],['obj-action-legs','legs'],
     ['obj-action-handle','handle'],['obj-action-curtains','curtains'],['obj-action-screen','screen'],['obj-action-case','case'],['obj-action-doors','doors'],['obj-action-lights','lights']
   ];
   actionInputs.forEach(([id,key])=>{const n=document.getElementById(id);if(n)n.addEventListener('input',e=>{ensureObjectActions(obj);obj.action[key]=e.target.value;rebuildObjectMesh(obj);updateUI();});});
