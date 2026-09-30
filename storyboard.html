@@ -541,6 +541,7 @@ const STATE={
     selectedAnchor:null,
     selectedObj:null,
     objCamMode:'path',
+    objectMoveMode:false,
     fov:60,
     flySpeed:5,
   }
@@ -725,7 +726,7 @@ function buildGodMesh(god,idx){
   const arrowHead=new THREE.Mesh(new THREE.ConeGeometry(0.05,0.12,8),arrowMat);
   arrowHead.rotation.x=Math.PI/2;arrowHead.position.set(0,1.4,0.45);g.add(arrowHead);
   // label
-  const lTex=makeLabel(god.label,godColor(idx));
+  const lTex=makeLabel('God Entity '+(idx+1),godColor(idx));
   const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:lTex,transparent:true,depthTest:false}));
   sprite.scale.set(1.4,0.45,1);sprite.position.y=2.2;
   g.add(sprite);g.userData.labelSprite=sprite;g.userData.labelCol=col;
@@ -788,7 +789,7 @@ function syncScene(){
     if(!godMeshes[god.id])buildGodMesh(god,i);
     else{
       const g=godMeshes[god.id];
-      g.userData.labelSprite.material.map=makeLabel(god.label,godColor(i));
+      g.userData.labelSprite.material.map=makeLabel('God Entity '+(i+1),godColor(i));
       g.userData.labelSprite.material.needsUpdate=true;
       g.position.set(god.pos.x,god.pos.y,god.pos.z);
       g.rotation.y=(god.rot.yaw||0)*DEG;
@@ -905,10 +906,13 @@ function buildObjectMesh(obj){
 
 function applyObjectPosition(mesh,obj){
   if(obj.isFree&&obj.pos){
-    mesh.position.set(obj.pos.x,0,obj.pos.z);
+    mesh.position.set(obj.pos.x,obj.pos.y||0,obj.pos.z);
   }else{
     const god=STATE.world.godEntities.find(g=>g.id===obj.godId);
-    if(god)mesh.position.set(god.pos.x,0,god.pos.z);
+    if(god){
+      const off=obj.offset||{x:0,y:0,z:0};
+      mesh.position.set(god.pos.x+(off.x||0),off.y||0,god.pos.z+(off.z||0));
+    }
   }
 }
 
@@ -950,10 +954,52 @@ let playbackCamActive=false,objCamPathActive=false;
 
 document.addEventListener('keydown',e=>{
   keys[e.code]=true;
-  if(e.code==='Escape' && isFlyActive){
-    isFlyActive=false;
-    updateFlyUI();
-    if(document.pointerLockElement)document.exitPointerLock();
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
+  if(e.code==='Escape'){
+    e.preventDefault();
+    if(isFlyActive){
+      isFlyActive=false;
+      updateFlyUI();
+      if(document.pointerLockElement)document.exitPointerLock();
+      if(STATE.ui.stage==='object' && STATE.ui.selectedObj){
+        STATE.ui.objectMoveMode=false;
+        showToast('Camera released. Press Esc again to move the selected object.');
+        updateUI();
+      }
+      return;
+    }
+    if(STATE.ui.stage==='object' && STATE.ui.selectedObj){
+      STATE.ui.objectMoveMode=!STATE.ui.objectMoveMode;
+      showToast(STATE.ui.objectMoveMode?'OBJECT MOVE ACTIVE · W/A/S/D · Q/E':'OBJECT MOVE OFF');
+      updateUI();
+      return;
+    }
+  }
+  if(STATE.ui.stage==='object' && STATE.ui.objectMoveMode && STATE.ui.selectedObj){
+    const obj=STATE.ui.selectedObj;
+    const step=e.shiftKey?0.25:0.05;
+    if(['KeyW','KeyA','KeyS','KeyD','KeyQ','KeyE'].includes(e.code)){
+      e.preventDefault();
+      if(obj.isFree){
+        if(!obj.pos)obj.pos={x:0,y:0,z:0};
+        if(e.code==='KeyW')obj.pos.z-=step;
+        if(e.code==='KeyS')obj.pos.z+=step;
+        if(e.code==='KeyA')obj.pos.x-=step;
+        if(e.code==='KeyD')obj.pos.x+=step;
+        if(e.code==='KeyQ')obj.pos.y=Math.max(0,obj.pos.y-step);
+        if(e.code==='KeyE')obj.pos.y=Math.min(ROOM_H-0.1,obj.pos.y+step);
+      }else{
+        if(!obj.offset)obj.offset={x:0,y:0,z:0};
+        if(e.code==='KeyW')obj.offset.z-=step;
+        if(e.code==='KeyS')obj.offset.z+=step;
+        if(e.code==='KeyA')obj.offset.x-=step;
+        if(e.code==='KeyD')obj.offset.x+=step;
+        if(e.code==='KeyQ')obj.offset.y=Math.max(-4,obj.offset.y-step);
+        if(e.code==='KeyE')obj.offset.y=Math.min(4,obj.offset.y+step);
+      }
+      updateObjectMesh(obj);
+      return;
+    }
   }
 });
 document.addEventListener('keyup',e=>{keys[e.code]=false;});
@@ -1035,7 +1081,7 @@ function tickFly(dt){
   const stage=STATE.ui.stage;
   const blocked=playbackCamActive||objCamPathActive||
     (stage==='shot'&&activeShot()&&activeShot().timeline.playing);
-  if(!isFlyActive||blocked)return;
+  if(!isFlyActive||blocked|| (stage==='object'&&STATE.ui.objectMoveMode))return;
   const speed=STATE.ui.flySpeed*(keys['ShiftLeft']||keys['ShiftRight']?3:1)*dt;
   const dir=new THREE.Vector3();camera.getWorldDirection(dir);
   const right=new THREE.Vector3();right.crossVectors(dir,camera.up).normalize();
@@ -1080,17 +1126,16 @@ function releaseGodEntity(){
   pushUndo();
   const s=getCameraState();
   const idx=STATE.world.godEntities.length;
-  const labels=['Director','Actor A','Actor B','Prop A','Prop B'];
   const god={
     id:uid(),
-    label:'GOD '+String(idx+1).padStart(2,'0')+' '+labels[idx],
+    label:'God Entity '+(idx+1),
     pos:{...s.pos},
     rot:{...s.rot},
   };
   STATE.world.godEntities.push(god);
   buildGodMesh(god,idx);
   updateUI();
-  showToast('God Entity: '+god.label);
+  showToast('God Entity '+(idx+1)+' released');
 }
 
 function deleteGod(id){
@@ -1363,7 +1408,7 @@ function assignObjectToGod(godId,type){
   pushUndo();
   STATE.world.objects=STATE.world.objects.filter(o=>o.godId!==godId);
   const cat=OBJ_CATALOGUE.find(o=>o.id===type);
-  const obj={id:uid(),godId,label:cat?cat.label:type,type,rot:{x:0,y:0,z:0},scale:1,visible:true,isFree:false};
+  const obj={id:uid(),godId,label:cat?cat.label:type,type,rot:{x:0,y:0,z:0},scale:1,visible:true,isFree:false,offset:{x:0,y:0,z:0}};
   STATE.world.objects.push(obj);
   STATE.ui.selectedObj=obj;
   syncObjectMeshes();updateUI();
@@ -1664,7 +1709,7 @@ function updateGodList(){
     <div class="god-item${STATE.ui.selectedGod&&STATE.ui.selectedGod.id===g.id?' active':''}" data-god-id="${g.id}">
       <div class="item-num" style="background:${godColorHex(i)};color:#111">G${i+1}</div>
       <div class="item-info">
-        <div class="item-name">${escHtml(g.label)}</div>
+        <div class="item-name">God Entity ${i+1}</div>
         <div class="item-meta">${g.pos.x.toFixed(2)}, ${g.pos.y.toFixed(2)}, ${g.pos.z.toFixed(2)}</div>
       </div>
       <button class="item-del" data-del-god="${g.id}" title="Delete">×</button>
@@ -1702,9 +1747,9 @@ function updateGodDetail(){
   const g=STATE.ui.selectedGod;
   if(!g){el.innerHTML='<div class="empty-msg">Click a God Entity to inspect it.</div>';return;}
   el.innerHTML=`
-    <div class="name-edit">
-      <input id="god-name-in" value="${escHtml(g.label)}" maxlength="32"/>
-      <button id="god-name-save">Save</button>
+    <div class="obj-assign-panel" style="margin-bottom:7px">
+      <div style="font:600 12px var(--sans)">God Entity ${STATE.world.godEntities.findIndex(x=>x.id===g.id)+1}</div>
+      <div style="font:9px var(--mono);color:var(--dim);margin-top:3px">Released at camera position</div>
     </div>
     <div class="god-detail">
       <div class="gd-row"><span class="gd-label">Position</span><span class="gd-locked">LOCKED</span></div>
@@ -1715,13 +1760,6 @@ function updateGodDetail(){
       <div class="gd-row"><span class="gd-label">Yaw</span><span class="gd-val">${g.rot.yaw}°</span></div>
     </div>
     <button class="btn-action danger" data-del-god="${g.id}"><span class="ico">×</span> Delete God Entity</button>`;
-  document.getElementById('god-name-save').addEventListener('click',()=>{
-    const v=document.getElementById('god-name-in').value.trim();if(!v)return;
-    pushUndo();g.label=v;syncScene();updateUI();showToast('Renamed');
-  });
-  document.getElementById('god-name-in').addEventListener('keydown',e=>{
-    if(e.key==='Enter')document.getElementById('god-name-save').click();
-  });
 }
 
 function updateAnchorDetail(){
@@ -1762,7 +1800,7 @@ function updateObjectPanel(){
     return `<div class="god-obj-item${isActive?' active':''}" data-sel-god-obj="${god.id}">
       <div class="god-obj-dot" style="background:${col};color:#111">G${i+1}</div>
       <div class="god-obj-info">
-        <div class="god-obj-name">${escHtml(god.label)}</div>
+        <div class="god-obj-name">God Entity ${i+1}</div>
         <div class="god-obj-sub">${asgn?escHtml(asgn.label)+' · LOCKED':'Unassigned'}</div>
       </div>
       ${asgn
@@ -1800,6 +1838,13 @@ function updateObjectDetail(){
       </div>
       <div style="font:10px var(--mono);color:var(--dim)">Type: <b style="color:var(--text)">${obj.type}</b></div>
     </div>
+    ${obj.isFree ? '' : `<div class="ctrl-row" style="background:var(--panel2);padding:8px;border-radius:7px">
+      <div class="ctrl-label">God Entity Placement Offset</div>
+      <div style="font:9px var(--mono);color:var(--dim);margin-bottom:6px">Move relative to its God Entity without breaking the assignment.</div>
+      <div class="rot-axis-row"><span class="rot-axis-label">X</span><input type="range" id="obj-off-x" min="-10" max="10" step="0.05" value="${obj.offset?.x||0}" style="flex:1;accent-color:var(--accent)"/><span class="rot-axis-val" id="obj-off-x-val">${(obj.offset?.x||0).toFixed(2)}</span></div>
+      <div class="rot-axis-row"><span class="rot-axis-label">Y</span><input type="range" id="obj-off-y" min="-4" max="4" step="0.05" value="${obj.offset?.y||0}" style="flex:1;accent-color:var(--accent)"/><span class="rot-axis-val" id="obj-off-y-val">${(obj.offset?.y||0).toFixed(2)}</span></div>
+      <div class="rot-axis-row"><span class="rot-axis-label">Z</span><input type="range" id="obj-off-z" min="-10" max="10" step="0.05" value="${obj.offset?.z||0}" style="flex:1;accent-color:var(--accent)"/><span class="rot-axis-val" id="obj-off-z-val">${(obj.offset?.z||0).toFixed(2)}</span></div>
+    </div>`}
     <div class="ctrl-row">
       <div class="ctrl-label">Rotation Y</div>
       <div class="rot-axis-row">
@@ -1832,6 +1877,17 @@ function updateObjectDetail(){
     </div>
     <div class="divider"></div>
     <button class="btn-action danger" id="btn-remove-obj"><span class="ico">×</span> Remove Object</button>`;
+
+  ['x','y','z'].forEach(axis=>{
+    const input=document.getElementById('obj-off-'+axis);
+    if(!input)return;
+    input.addEventListener('input',e=>{
+      if(!obj.offset)obj.offset={x:0,y:0,z:0};
+      obj.offset[axis]=+e.target.value;
+      document.getElementById('obj-off-'+axis+'-val').textContent=obj.offset[axis].toFixed(2);
+      updateObjectMesh(obj);
+    });
+  });
 
   document.getElementById('rot-y').addEventListener('input',e=>{
     obj.rot.y=+e.target.value;document.getElementById('rot-y-val').textContent=obj.rot.y+'°';
@@ -1948,8 +2004,16 @@ function updateShotObjList(frame){
         <input type="range" id="kf-rot-y" min="-180" max="180" step="1" value="${st.rot.y.toFixed(0)}" style="width:100%;accent-color:var(--accent)"/>
       </div>
       <div class="ctrl-row">
-        <div class="ctrl-label">Rotation X <span style="color:var(--text)">${st.rot.x.toFixed(0)}°</span></div>
+        <div class="ctrl-label">Rotation X <span style="color:var(--text)" id="kf-rot-x-val">${st.rot.x.toFixed(0)}°</span></div>
         <input type="range" id="kf-rot-x" min="-90" max="90" step="1" value="${st.rot.x.toFixed(0)}" style="width:100%;accent-color:var(--accent)"/>
+      </div>
+      <div class="ctrl-row">
+        <div class="ctrl-label">Rotation Z <span style="color:var(--text)" id="kf-rot-z-val">${st.rot.z.toFixed(0)}°</span></div>
+        <input type="range" id="kf-rot-z" min="-180" max="180" step="1" value="${st.rot.z.toFixed(0)}" style="width:100%;accent-color:var(--accent)"/>
+      </div>
+      <div class="ctrl-row">
+        <div class="ctrl-label">Scale <span style="color:var(--text)" id="kf-scale-val">${(st.scale||1).toFixed(2)}</span></div>
+        <input type="range" id="kf-scale" min="0.1" max="5" step="0.05" value="${st.scale||1}" style="width:100%;accent-color:var(--accent)"/>
       </div>
       <div style="display:flex;gap:4px;margin-bottom:5px">
         <button class="btn-action${st.visible?' primary':''}" style="flex:1;margin:0;padding:6px;font:500 10px var(--mono)" id="kf-vis-show">Visible</button>
@@ -1960,10 +2024,17 @@ function updateShotObjList(frame){
     const applyLivePreview=()=>{
       const ry=parseFloat(document.getElementById('kf-rot-y').value);
       const rx=parseFloat(document.getElementById('kf-rot-x').value);
-      const m=objectMeshes[obj.id];if(m){m.rotation.set(rx*DEG,ry*DEG,0);applyObjectPosition(m,obj);}
+      const rz=parseFloat(document.getElementById('kf-rot-z').value);
+      const sc=parseFloat(document.getElementById('kf-scale').value);
+      document.getElementById('kf-rot-x-val').textContent=rx+'°';
+      document.getElementById('kf-rot-z-val').textContent=rz+'°';
+      document.getElementById('kf-scale-val').textContent=sc.toFixed(2);
+      const m=objectMeshes[obj.id];if(m){m.rotation.set(rx*DEG,ry*DEG,rz*DEG);m.scale.setScalar(sc);applyObjectPosition(m,obj);}
     };
     document.getElementById('kf-rot-y').addEventListener('input',applyLivePreview);
     document.getElementById('kf-rot-x').addEventListener('input',applyLivePreview);
+    document.getElementById('kf-rot-z').addEventListener('input',applyLivePreview);
+    document.getElementById('kf-scale').addEventListener('input',applyLivePreview);
 
     if(hasKfHere){
       document.getElementById('kf-delete-btn').addEventListener('click',()=>{
@@ -1972,8 +2043,10 @@ function updateShotObjList(frame){
       const updateExistingKf=()=>{
         const ry=parseFloat(document.getElementById('kf-rot-y').value);
         const rx=parseFloat(document.getElementById('kf-rot-x').value);
+        const rz=parseFloat(document.getElementById('kf-rot-z').value);
+        const sc=parseFloat(document.getElementById('kf-scale').value);
         const kf=shot.objectKeyframes[obj.id].find(k=>k.frame===frame);
-        if(kf){kf.rot.y=ry;kf.rot.x=rx;}
+        if(kf){kf.rot.y=ry;kf.rot.x=rx;kf.rot.z=rz;kf.scale=sc;}
         applyFrameToScene(frame);updateShotUI();
       };
       document.getElementById('kf-rot-y').addEventListener('change',updateExistingKf);
@@ -1986,10 +2059,12 @@ function updateShotObjList(frame){
         pushUndo();
         const ry=parseFloat(document.getElementById('kf-rot-y').value);
         const rx=parseFloat(document.getElementById('kf-rot-x').value);
+        const rz=parseFloat(document.getElementById('kf-rot-z').value);
+        const sc=parseFloat(document.getElementById('kf-scale').value);
         const vis=document.getElementById('kf-vis-show').classList.contains('primary');
         if(!shot.objectKeyframes[obj.id])shot.objectKeyframes[obj.id]=[];
         shot.objectKeyframes[obj.id]=shot.objectKeyframes[obj.id].filter(k=>k.frame!==frame);
-        shot.objectKeyframes[obj.id].push({frame,rot:{x:rx,y:ry,z:0},scale:obj.scale||1,visible:vis});
+        shot.objectKeyframes[obj.id].push({frame,rot:{x:rx,y:ry,z:rz},scale:sc,visible:vis});
         shot.objectKeyframes[obj.id].sort((a,b)=>a.frame-b.frame);
         applyFrameToScene(frame);updateUI();showToast('Keyframe set at '+frame);
       });
@@ -2017,6 +2092,7 @@ document.querySelectorAll('.stage-tab').forEach(tab=>{
     if(newStage==='shot'&&shot&&shot.cameraPath.anchors.length<2){showToast('Need at least 2 anchors');return;}
     pausePlayback();pauseObjPlayback();pauseShotPlay();
     STATE.ui.stage=newStage;
+    STATE.ui.objectMoveMode=false;
     if(newStage!=='camera'&&isPointerLocked)document.exitPointerLock();
     // On entering shot mode, rebuild frames if needed
     if(newStage==='shot'&&shot){rebuildCameraFrames(shot);}
@@ -2186,262 +2262,186 @@ async function exportContactSheet(){
 }
 document.getElementById('btn-export-contact').addEventListener('click',exportContactSheet);
 
-// ── MP4 EXPORT (WebCodecs + MP4Muxer via embedded stub) ────────
+// ── MP4 EXPORT ─────────────────────────────────────────────────
+// Uses WebCodecs AVC + a real ISO-BMFF muxer. The previous exporter
+// wrote raw H.264 chunks into an incomplete MP4, which is why players
+// quite reasonably treated the result as a doorstop.
+function mp4U8(n){return new Uint8Array([n&255]);}
+function mp4U16(n){const b=new Uint8Array(2);new DataView(b.buffer).setUint16(0,n);return b;}
+function mp4I16(n){const b=new Uint8Array(2);new DataView(b.buffer).setInt16(0,n);return b;}
+function mp4U24(n){const b=new Uint8Array(3);b[0]=(n>>>16)&255;b[1]=(n>>>8)&255;b[2]=n&255;return b;}
+function mp4U32(n){const b=new Uint8Array(4);new DataView(b.buffer).setUint32(0,n>>>0);return b;}
+function mp4I32(n){const b=new Uint8Array(4);new DataView(b.buffer).setInt32(0,n|0);return b;}
+function mp4Str(s){return new TextEncoder().encode(s);}
+function mp4Zeros(n){return new Uint8Array(n);}
+function mp4Concat(...parts){
+  const list=parts.map(p=>p instanceof Uint8Array?p:new Uint8Array(p));
+  const len=list.reduce((n,p)=>n+p.byteLength,0);const out=new Uint8Array(len);let o=0;
+  for(const p of list){out.set(p,o);o+=p.byteLength;}return out;
+}
+function mp4Box(type,...parts){
+  const payload=mp4Concat(...parts);const size=8+payload.byteLength;const out=new Uint8Array(size);
+  new DataView(out.buffer).setUint32(0,size);out.set(mp4Str(type),4);out.set(payload,8);return out;
+}
+function mp4FullBox(type,version,flags,...parts){
+  return mp4Box(type,mp4U8(version),mp4U24(flags),...parts);
+}
+function annexBToAvcc(data){
+  const u=data instanceof Uint8Array?data:new Uint8Array(data);
+  const starts=[];
+  for(let i=0;i<u.length-3;i++){
+    if(u[i]===0&&u[i+1]===0&&u[i+2]===1)starts.push({i,n:3});
+    else if(i<u.length-4&&u[i]===0&&u[i+1]===0&&u[i+2]===0&&u[i+3]===1)starts.push({i,n:4});
+  }
+  if(!starts.length)return u;
+  const out=[];
+  for(let j=0;j<starts.length;j++){
+    const a=starts[j].i+starts[j].n;const b=j+1<starts.length?starts[j+1].i:u.length;
+    if(b<=a)continue;const n=b-a;out.push(mp4U32(n),u.slice(a,b));
+  }
+  return mp4Concat(...out);
+}
+function avccToAnnexB(data){
+  const u=data instanceof Uint8Array?data:new Uint8Array(data);const out=[];let p=0;
+  while(p+4<=u.length){
+    const n=new DataView(u.buffer,u.byteOffset+p,4).getUint32(0);p+=4;
+    if(!n||p+n>u.length) return u;
+    out.push(new Uint8Array([0,0,0,1]),u.slice(p,p+n));p+=n;
+  }
+  return p===u.length?mp4Concat(...out):u;
+}
+function extractAnnexBNals(data){
+  const u=data instanceof Uint8Array?data:new Uint8Array(data), starts=[];
+  for(let i=0;i<u.length-3;i++){
+    if(u[i]===0&&u[i+1]===0&&u[i+2]===1)starts.push({i,n:3});
+    else if(i<u.length-4&&u[i]===0&&u[i+1]===0&&u[i+2]===0&&u[i+3]===1)starts.push({i,n:4});
+  }
+  return starts.map((st,j)=>u.slice(st.i+st.n,j+1<starts.length?starts[j+1].i:u.length));
+}
+function buildAvcCFromSpsPps(sps,pps){
+  if(!sps||!pps)return null;
+  const profile=sps[1]||0x64,compat=sps[2]||0,level=sps[3]||0x1f;
+  return mp4Concat(
+    new Uint8Array([1,profile,compat,level,0xff,0xe1]),
+    mp4U16(sps.length),sps,
+    new Uint8Array([1]),mp4U16(pps.length),pps
+  );
+}
+function normalizeAvcDescription(desc,fallbackChunk){
+  if(desc){
+    const u=desc instanceof Uint8Array?desc:new Uint8Array(desc);
+    if(u.length>=7&&u[0]===1)return u;
+  }
+  const nals=extractAnnexBNals(fallbackChunk||new Uint8Array());
+  const sps=nals.find(n=>(n[0]&31)===7);const pps=nals.find(n=>(n[0]&31)===8);
+  return buildAvcCFromSpsPps(sps,pps);
+}
+function makeMp4Movie(chunks,w,h,fps,avcDescription){
+  if(!chunks.length||!avcDescription)throw new Error('Missing H.264 decoder configuration');
+  const timescale=90000;const sampleDuration=Math.round(timescale/fps);const duration=sampleDuration*chunks.length;
+  const mdatPayload=mp4Concat(...chunks.map(c=>c.data));
+  const ftyp=mp4Box('ftyp',mp4Str('isom'),mp4U32(0x200),mp4Str('isom'),mp4Str('iso2'),mp4Str('avc1'),mp4Str('mp41'));
+  const mdat=mp4Box('mdat',mdatPayload);
+  let offset=ftyp.byteLength+8;
+  const offsets=chunks.map(c=>{const o=offset;offset+=c.data.byteLength;return o;});
+  const keySamples=chunks.map((c,i)=>c.key?i+1:null).filter(Boolean);
+
+  const avc1Header=mp4Concat(
+    mp4Zeros(6),mp4U16(1),mp4Zeros(16),mp4U16(w),mp4U16(h),
+    mp4U32(0x00480000),mp4U32(0x00480000),mp4U32(0),mp4U16(1),
+    mp4Zeros(32),mp4U16(0x0018),mp4I16(-1)
+  );
+  const avc1=mp4Box('avc1',avc1Header,mp4Box('avcC',avcDescription));
+  const stsd=mp4FullBox('stsd',0,0,mp4U32(1),avc1);
+  const stts=mp4FullBox('stts',0,0,mp4U32(1),mp4U32(chunks.length),mp4U32(sampleDuration));
+  const stss=mp4FullBox('stss',0,0,mp4U32(keySamples.length),...keySamples.map(mp4U32));
+  const stsc=mp4FullBox('stsc',0,0,mp4U32(1),mp4U32(1),mp4U32(1),mp4U32(1));
+  const stsz=mp4FullBox('stsz',0,0,mp4U32(0),mp4U32(chunks.length),...chunks.map(c=>mp4U32(c.data.byteLength)));
+  const stco=mp4FullBox('stco',0,0,mp4U32(chunks.length),...offsets.map(mp4U32));
+  const stbl=mp4Box('stbl',stsd,stts,stss,stsc,stsz,stco);
+  const vmhd=mp4FullBox('vmhd',0,1,mp4U16(0),mp4U16(0),mp4U16(0),mp4U16(0));
+  const url=mp4FullBox('url ',0,1);
+  const dref=mp4FullBox('dref',0,0,mp4U32(1),url);
+  const dinf=mp4Box('dinf',dref);
+  const minf=mp4Box('minf',vmhd,dinf,stbl);
+  const now=Math.floor(Date.now()/1000)+2082844800;
+  const mdhd=mp4FullBox('mdhd',0,0,mp4U32(now),mp4U32(now),mp4U32(timescale),mp4U32(duration),mp4U16(0x55c4),mp4U16(0));
+  const hdlr=mp4FullBox('hdlr',0,0,mp4U32(0),mp4Str('vide'),mp4Zeros(12),mp4Str('VideoHandler\0'));
+  const mdia=mp4Box('mdia',mdhd,hdlr,minf);
+  const matrix=new Uint8Array([0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0x40,0,0,0]);
+  const tkhd=mp4FullBox('tkhd',0,7,mp4U32(now),mp4U32(now),mp4U32(1),mp4U32(0),mp4U32(duration),mp4Zeros(8),mp4U16(0),mp4U16(0),mp4U16(0),mp4U16(0),matrix,mp4U32(w<<16),mp4U32(h<<16));
+  const trak=mp4Box('trak',tkhd,mdia);
+  const mvhd=mp4FullBox('mvhd',0,0,mp4U32(now),mp4U32(now),mp4U32(timescale),mp4U32(duration),mp4U32(0x00010000),mp4U16(0x0100),mp4Zeros(10),matrix,mp4Zeros(24),mp4U32(2));
+  const moov=mp4Box('moov',mvhd,trak);
+  return mp4Concat(ftyp,mdat,moov);
+}
+
 async function exportMP4(){
   const shot=activeShot();const total=totalFrames();
   if(!shot||total<1){showToast('No frames to export');return;}
+  if(!window.VideoEncoder||!window.VideoFrame){showToast('This browser has no WebCodecs AVC encoder. Export PNG sequence instead.');await exportPNGSequence();return;}
 
-  // Check for WebCodecs
-  if(!window.VideoEncoder||!window.VideoFrame){
-    // Fallback: export PNG zip with instructions
-    showToast('WebCodecs not available — exporting PNG sequence instead');
-    await exportPNGSequence();
-    return;
-  }
-
-  showExportProgress('Exporting MP4 (WebCodecs)');
-  await new Promise(r=>setTimeout(r,80));
-
+  showExportProgress('Exporting MP4');
+  await new Promise(r=>setTimeout(r,50));
   const vp=document.getElementById('viewport');
-  const expW=Math.floor(vp.clientWidth/2)*2;
-  const expH=Math.floor(vp.clientHeight/2)*2;
+  const expW=Math.max(2,Math.floor(vp.clientWidth/2)*2),expH=Math.max(2,Math.floor(vp.clientHeight/2)*2);
   const origW=renderer.domElement.width,origH=renderer.domElement.height;
-  renderer.setSize(expW,expH,false);
-  camera.aspect=expW/expH;camera.updateProjectionMatrix();
+  renderer.setSize(expW,expH,false);camera.aspect=expW/expH;camera.updateProjectionMatrix();
   const savedFrame=shot.timeline.currentFrame;
-
-  // Simple MP4 muxer using ArrayBuffer chunks
-  const chunks=[];
-  let encoder;
-  let encoderError=null;
-
+  const samples=[];let decoderConfig=null;let encoder=null;
   try{
     encoder=new VideoEncoder({
       output:(chunk,meta)=>{
-        const buf=new ArrayBuffer(chunk.byteLength);
-        chunk.copyTo(buf);
-        chunks.push({buf,type:chunk.type,ts:chunk.timestamp,duration:chunk.duration});
+        const buf=new Uint8Array(chunk.byteLength);chunk.copyTo(buf);
+        if(meta&&meta.decoderConfig&&!decoderConfig)decoderConfig=meta.decoderConfig;
+        samples.push({data:buf,key:chunk.type==='key'});
       },
-      error:(e)=>{encoderError=e;}
+      error:e=>{throw e;}
     });
-
-    encoder.configure({
-      codec:'avc1.420034',
-      width:expW,height:expH,
-      bitrate:4_000_000,
-      framerate:FPS
-    });
+    const cfg={
+      codec:'avc1.64001f',width:expW,height:expH,bitrate:6_000_000,framerate:FPS,
+      latencyMode:'quality',avc:{format:'avc'}
+    };
+    const support=await VideoEncoder.isConfigSupported(cfg);
+    if(!support.supported){throw new Error('AVC MP4 encoding is not supported by this browser');}
+    encoder.configure(cfg);
 
     for(let f=0;f<total;f++){
       applyFrameToScene(f);renderer.render(scene,camera);
-      // Create ImageBitmap from canvas
       const bmp=await createImageBitmap(renderer.domElement);
-      const vf=new VideoFrame(bmp,{timestamp:Math.round(f*(1e6/FPS)),duration:Math.round(1e6/FPS)});
-      encoder.encode(vf,{keyFrame:f%30===0});
+      const vf=new VideoFrame(bmp,{timestamp:Math.round(f*1e6/FPS),duration:Math.round(1e6/FPS)});
+      encoder.encode(vf,{keyFrame:f===0||f%FPS===0});
       vf.close();bmp.close();
-      if(f%4===0){updateExportProgress(`Encoding ${f+1}/${total}`,((f+1)/total)*75);await new Promise(r=>setTimeout(r,0));}
+      if(f%3===0){updateExportProgress(`Encoding ${f+1} / ${total}`,(f+1)/total*78);await new Promise(r=>setTimeout(r,0));}
     }
+    updateExportProgress('Finalizing H.264…',82);
+    await encoder.flush();encoder.close();encoder=null;
+    if(!samples.length)throw new Error('Encoder produced no frames');
 
-    updateExportProgress('Flushing…',80);
-    await encoder.flush();
-    encoder.close();
-
-    if(encoderError)throw encoderError;
-
-    // Build a simple raw H.264 ES blob with timestamps — we use a minimal MP4 container
-    updateExportProgress('Muxing MP4…',85);
-    await new Promise(r=>setTimeout(r,0));
-
-    const mp4=buildSimpleMP4(chunks,expW,expH,FPS,total);
-    renderer.setSize(origW,origH,false);camera.aspect=origW/origH;camera.updateProjectionMatrix();
-    setCurrentFrame(savedFrame);hideExportProgress();
-
-    if(mp4){
-      const blob=new Blob([mp4],{type:'video/mp4'});
-      const a=document.createElement('a');
-      a.href=URL.createObjectURL(blob);
-      a.download=(shot.name||'shot').replace(/\s+/g,'-').toUpperCase()+'.mp4';
-      a.click();showToast('MP4 exported');
-    }else{
-      showToast('MP4 mux failed — exporting PNG sequence instead');
-      renderer.setSize(origW,origH,false);camera.aspect=origW/origH;camera.updateProjectionMatrix();
-      setCurrentFrame(savedFrame);hideExportProgress();
-      await exportPNGSequence();
+    let description=decoderConfig&&decoderConfig.description?new Uint8Array(decoderConfig.description):null;
+    if(!description){
+      const firstAnnex=samples[0].data;
+      const nals=extractAnnexBNals(firstAnnex);const sps=nals.find(n=>(n[0]&31)===7);const pps=nals.find(n=>(n[0]&31)===8);
+      description=buildAvcCFromSpsPps(sps,pps);
     }
+    if(!description)throw new Error('No AVC decoder configuration was returned');
+
+    // Some implementations ignore avc.format and still emit Annex B. Normalize each sample.
+    samples.forEach(s=>{s.data=annexBToAvcc(s.data);});
+    updateExportProgress('Writing MP4 container…',90);
+    const mp4=makeMp4Movie(samples,expW,expH,FPS,description);
+    const blob=new Blob([mp4],{type:'video/mp4'});
+    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;
+    a.download=(shot.name||'shot').replace(/\s+/g,'-').toUpperCase()+'.mp4';a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1500);
+    renderer.setSize(origW,origH,false);camera.aspect=origW/origH;camera.updateProjectionMatrix();setCurrentFrame(savedFrame);hideExportProgress();
+    showToast('MP4 exported successfully');
   }catch(err){
     console.error('MP4 export error:',err);
-    renderer.setSize(origW,origH,false);camera.aspect=origW/origH;camera.updateProjectionMatrix();
-    setCurrentFrame(savedFrame);hideExportProgress();
-    showToast('MP4 failed — exporting PNG sequence instead');
+    try{encoder?.close();}catch(_){}
+    renderer.setSize(origW,origH,false);camera.aspect=origW/origH;camera.updateProjectionMatrix();setCurrentFrame(savedFrame);hideExportProgress();
+    showToast('MP4 export failed: '+(err?.message||'unknown error'));await new Promise(r=>setTimeout(r,250));
     await exportPNGSequence();
-  }
-}
-
-// Minimal ISOBMFF/MP4 muxer for H.264 AVC data from WebCodecs
-function buildSimpleMP4(chunks,w,h,fps,totalFrames){
-  try{
-    // Helper functions for writing box structures
-    function box(type,...children){
-      const t=new TextEncoder().encode(type);
-      let size=8;for(const c of children)size+=c.byteLength;
-      const b=new Uint8Array(size);const v=new DataView(b.buffer);
-      v.setUint32(0,size);b.set(t,4);
-      let off=8;for(const c of children){b.set(new Uint8Array(c instanceof ArrayBuffer?c:c.buffer),off);off+=c.byteLength;}
-      return b;
-    }
-    function u8(n){const b=new Uint8Array(1);b[0]=n;return b;}
-    function u16(n){const b=new Uint8Array(2);new DataView(b.buffer).setUint16(0,n);return b;}
-    function u32(n){const b=new Uint8Array(4);new DataView(b.buffer).setUint32(0,n);return b;}
-    function u64(n){const b=new Uint8Array(8);const v=new DataView(b.buffer);v.setUint32(0,Math.floor(n/0x100000000));v.setUint32(4,n>>>0);return b;}
-    function concat(...arrs){
-      let len=0;for(const a of arrs)len+=a.byteLength;
-      const out=new Uint8Array(len);let off=0;
-      for(const a of arrs){out.set(a instanceof Uint8Array?a:new Uint8Array(a instanceof ArrayBuffer?a:a.buffer),off);off+=a.byteLength;}
-      return out;
-    }
-
-    // Find SPS/PPS from keyframe SEI/AVCC (Chrome WebCodecs puts them in description)
-    // Since we may not have a description, we build a minimal SPS/PPS manually
-    // This is a best-effort mux — valid enough for most players
-    const timescale=FPS*100;
-    const frameDuration=100;
-    const duration=totalFrames*frameDuration;
-
-    // Collect all chunk data
-    const sampleData=[];let offset=0;
-    for(const ch of chunks){
-      sampleData.push({data:ch.buf,size:ch.buf.byteLength,isKey:ch.type==='key',offset});
-      offset+=ch.buf.byteLength;
-    }
-
-    // Build mdat first
-    const mdatPayloads=sampleData.map(s=>s.data);
-    const mdatData=concat(...mdatPayloads);
-    const mdatSize=8+mdatData.byteLength;
-
-    // moov offset = 8(ftyp) + mdatSize
-    const ftypSize=24;
-    const moofOffset=ftypSize+mdatSize;
-
-    // stco needs absolute offsets of samples within file
-    // samples start at offset ftypSize + 8(mdat header)
-    const samplesStartOffset=ftypSize+8;
-    let sampleOffset=samplesStartOffset;
-    for(const s of sampleData){s.fileOffset=sampleOffset;sampleOffset+=s.size;}
-
-    // Build ftyp
-    const ftyp=box('ftyp',
-      new TextEncoder().encode('isom'),
-      u32(0x200),
-      new TextEncoder().encode('isom'),
-      new TextEncoder().encode('iso2'),
-      new TextEncoder().encode('avc1'),
-      new TextEncoder().encode('mp41')
-    );
-
-    // Build sample tables
-    // stsz (sample sizes)
-    const stszData=concat(u32(0),u32(0),u32(sampleData.length),...sampleData.map(s=>u32(s.size)));
-    const stsz=box('stsz',stszData);
-
-    // stco (chunk offsets) — one chunk per sample
-    const stcoData=concat(u32(0),u32(0),u32(sampleData.length),...sampleData.map(s=>u32(s.fileOffset)));
-    const stco=box('stco',stcoData);
-
-    // stsc (sample to chunk) — one sample per chunk
-    const stscData=concat(u32(0),u32(0),u32(1),u32(1),u32(1),u32(1));
-    const stsc=box('stsc',stscData);
-
-    // stts (time to sample) — all same duration
-    const sttsData=concat(u32(0),u32(0),u32(1),u32(sampleData.length),u32(frameDuration));
-    const stts=box('stts',sttsData);
-
-    // stss (sync samples — keyframes)
-    const keyFrames=sampleData.filter(s=>s.isKey).map((_,i)=>sampleData.indexOf(sampleData[i])+1);
-    const stssKeyFrames=sampleData.map((s,i)=>s.isKey?i+1:null).filter(n=>n!==null);
-    const stssData=concat(u32(0),u32(0),u32(stssKeyFrames.length),...stssKeyFrames.map(n=>u32(n)));
-    const stss=box('stss',stssData);
-
-    // avcC box (H.264 decoder config) — minimal placeholder
-    // Real SPS/PPS would be extracted from the encoder description
-    const avcc=box('avcC',new Uint8Array([
-      0x01,0x64,0x00,0x1f,0xff,0xe1,0x00,0x05,
-      0x67,0x64,0x00,0x1f,0xac,0xd9,0x00,0x01,
-      0x00,0x04,0x68,0xeb,0xef,0x20
-    ]));
-
-    // avc1 video sample entry
-    const avc1Data=concat(
-      new Uint8Array(6),u16(1),
-      new Uint8Array(16),
-      u16(w),u16(h),
-      new Uint8Array([0,72,0,0,0,72,0,0,0,0,0,0,0,1]),
-      new Uint8Array(32),
-      u16(24),u16(0xffff),
-      avcc
-    );
-    const avc1=box('avc1',avc1Data);
-
-    // stsd
-    const stsdData=concat(u32(0),u32(0),u32(1),avc1);
-    const stsd=box('stsd',stsdData);
-
-    // stbl
-    const stbl=box('stbl',stsd,stts,stss,stsc,stsz,stco);
-
-    // dref, dinf
-    const url=box('url ',new Uint8Array([0,0,0,1]));
-    const drefData=concat(u32(0),u32(0),u32(1),url);
-    const dref=box('dref',drefData);
-    const dinf=box('dinf',dref);
-
-    // smhd (sound media header — reuse for video... actually use vmhd)
-    const vmhd=box('vmhd',new Uint8Array([0,0,0,1,0,0,0,0,0,0]));
-
-    // minf
-    const minf=box('minf',vmhd,dinf,stbl);
-
-    // mdhd
-    const now=Math.floor(Date.now()/1000)+2082844800;
-    const mdhdData=concat(u32(0),u32(0),u32(now),u32(now),u32(timescale),u32(duration),u16(0x55c4),u16(0));
-    const mdhd=box('mdhd',mdhdData);
-
-    // hdlr
-    const hdlrData=concat(u32(0),u32(0),new TextEncoder().encode('vide'),new Uint8Array(12),new TextEncoder().encode('VideoHandler\0'));
-    const hdlr=box('hdlr',hdlrData);
-
-    // mdia
-    const mdia=box('mdia',mdhd,hdlr,minf);
-
-    // tkhd
-    const tkhdData=concat(u32(3),u32(0),u32(now),u32(now),u32(1),u32(0),u32(0),u32(0),new Uint8Array(8),
-      u32(0),u32(0),new Uint8Array([0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0x40,0,0,0]),
-      u32(w<<16),u32(h<<16));
-    const tkhd=box('tkhd',tkhdData);
-
-    // edts/elst
-    const elstData=concat(u32(0),u32(0),u32(1),u32(duration),u32(0),u16(1),u16(0));
-    const elst=box('elst',elstData);const edts=box('edts',elst);
-
-    // trak
-    const trak=box('trak',tkhd,edts,mdia);
-
-    // mvhd
-    const mvhdData=concat(u32(0),u32(0),u32(now),u32(now),u32(timescale),u32(duration),u32(0x10000),u16(0x0100),
-      new Uint8Array(10),new Uint8Array([0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0x40,0,0,0]),
-      new Uint8Array(24),u32(2));
-    const mvhd=box('mvhd',mvhdData);
-
-    // moov
-    const moov=box('moov',mvhd,trak);
-
-    // Final file: ftyp + mdat + moov
-    const mdat=concat(u32(mdatSize),new TextEncoder().encode('mdat'),mdatData);
-    const result=concat(ftyp,mdat,moov);
-    return result.buffer;
-  }catch(e){
-    console.error('MP4 mux error:',e);
-    return null;
   }
 }
 
@@ -2481,7 +2481,9 @@ function loadProject(file){
       if(!STATE.activeShotId)STATE.activeShotId=STATE.shots[0].id;
       // Rebuild camera frames for all shots
       STATE.shots.forEach(s=>rebuildCameraFrames(s));
-      STATE.ui.selectedGod=null;STATE.ui.selectedAnchor=null;STATE.ui.selectedObj=null;
+      STATE.world.godEntities.forEach((g,i)=>{g.label='God Entity '+(i+1);});
+      STATE.world.objects.forEach(o=>{if(!o.offset)o.offset={x:0,y:0,z:0};if(o.isFree&&o.pos&&!Number.isFinite(o.pos.y))o.pos.y=0;});
+      STATE.ui.selectedGod=null;STATE.ui.selectedAnchor=null;STATE.ui.selectedObj=null;STATE.ui.objectMoveMode=false;
       STATE.ui.stage='camera';
       pausePlayback();pauseObjPlayback();pauseShotPlay();
       syncScene();syncObjectMeshes();updateUI();
@@ -2498,6 +2500,8 @@ function migrateToV4(data){
   shot.objectKeyframes=data.shot&&data.shot.keyframes?data.shot.keyframes:{};
   rebuildCameraFrames(shot);
   STATE.world={room:{w:ROOM_W,h:ROOM_H,d:ROOM_D},godEntities:data.godEntities||[],objects:data.objects||[]};
+  STATE.world.godEntities.forEach((g,i)=>{g.label='God Entity '+(i+1);});
+  STATE.world.objects.forEach(o=>{if(!o.offset)o.offset={x:0,y:0,z:0};if(o.isFree&&o.pos&&!Number.isFinite(o.pos.y))o.pos.y=0;});
   STATE.shots=[shot];STATE.activeShotId=shot.id;
   STATE.project={name:'Migrated Project',createdAt:'',updatedAt:new Date().toISOString()};
   STATE.settings={fps:12,segmentDuration:1,distMin:0.5,distMax:5};
