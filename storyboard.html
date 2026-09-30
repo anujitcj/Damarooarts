@@ -998,6 +998,7 @@ function updateFlyUI(){
   canvas.classList.toggle('fly-active',active);
 }
 
+  function enterCameraFly(){
   if(STATE.ui.stage!=='camera')return;
   if(playbackCamActive||STATE.ui.objCamMode==='path')return;
   isFlyActive=true;
