@@ -326,6 +326,16 @@ export async function onRequest(context) {
         String(version.version_number)
       );
 
+      headers.set(
+        "X-Script-Uploaded-At",
+        String(version.created_at || "")
+      );
+
+      headers.set(
+        "X-Script-File-Name",
+        encodeURIComponent(String(version.file_name || "screenplay.pdf"))
+      );
+
       return new Response(object.body, {
         status: 200,
         headers,
@@ -939,6 +949,53 @@ export async function onRequest(context) {
 
     /*
      * ---------------------------------------------------------
+     * GET /api/projects/we-before-me/comments/:id/replies
+     * ---------------------------------------------------------
+     */
+    const replyListMatch = path.match(
+      new RegExp(`^projects/${PROJECT_SLUG}/comments/(\\d+)/replies$`)
+    );
+
+    if (replyListMatch && method === "GET") {
+      await requireUser(request, env);
+      const commentId = Number(replyListMatch[1]);
+      const result = await env.DB.prepare(`
+        SELECT r.id, r.comment_id, r.body, r.created_at,
+               u.id AS author_id, u.name AS author_name, u.email AS author_email
+        FROM comment_replies r
+        JOIN users u ON u.id = r.author_id
+        WHERE r.comment_id = ?
+        ORDER BY r.created_at ASC, r.id ASC
+      `).bind(commentId).all();
+      return json({ ok: true, replies: result.results || [] });
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * POST /api/projects/we-before-me/comments/:id/replies
+     * ---------------------------------------------------------
+     */
+    if (replyListMatch && method === "POST") {
+      const user = await requireUser(request, env);
+      const commentId = Number(replyListMatch[1]);
+      const comment = await env.DB.prepare(`SELECT id, project_id, script_version_id FROM comments WHERE id = ? LIMIT 1`).bind(commentId).first();
+      if (!comment) return json({ ok: false, error: "Comment not found" }, 404);
+      let body;
+      try { body = await request.json(); } catch { return json({ ok: false, error: "Invalid JSON body" }, 400); }
+      const text = typeof body.body === "string" ? body.body.trim() : "";
+      if (!text) return json({ ok: false, error: "Reply cannot be empty" }, 400);
+      const inserted = await env.DB.prepare(`
+        INSERT INTO comment_replies (comment_id, author_id, body) VALUES (?, ?, ?) RETURNING id
+      `).bind(commentId, user.id, text).first();
+      await env.DB.prepare(`
+        INSERT INTO update_logs (project_id, user_id, action, description, script_version_id, metadata)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).bind(comment.project_id, user.id, "comment_replied", `${user.name || user.email} replied to screenplay comment ${commentId}.`, comment.script_version_id, JSON.stringify({ comment_id: commentId, reply_id: inserted?.id })).run();
+      return json({ ok: true, reply_id: inserted?.id }, 201);
+    }
+
+    /*
+     * ---------------------------------------------------------
      * GET /api/admin/users
      *
      * Admin only.
@@ -1479,6 +1536,26 @@ export async function onRequest(context) {
       headers.set("Cache-Control", "private, no-store");
       headers.set("X-Script-Version", String(version.version_number));
       return new Response(object.body, { status: 200, headers });
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * DELETE /api/admin/projects/we-before-me/versions/:id
+     * Admin-only permanent removal of a stored screenplay version.
+     * ---------------------------------------------------------
+     */
+    if (adminVersionMatch && method === "DELETE") {
+      const admin = await requireUser(request, env);
+      if (!isAdmin(admin)) return json({ ok: false, error: "Admin access required" }, 403);
+      const versionId = Number(adminVersionMatch[1]);
+      const version = await env.DB.prepare(`SELECT id, project_id, version_number, file_key, file_name FROM script_versions WHERE id = ? LIMIT 1`).bind(versionId).first();
+      if (!version) return json({ ok: false, error: "Version not found" }, 404);
+      await env.DB.prepare(`DELETE FROM comment_replies WHERE comment_id IN (SELECT id FROM comments WHERE script_version_id = ?)`).bind(versionId).run();
+      await env.DB.prepare(`DELETE FROM comments WHERE script_version_id = ?`).bind(versionId).run();
+      await env.DB.prepare(`DELETE FROM script_versions WHERE id = ?`).bind(versionId).run();
+      try { await env.FILES.delete(version.file_key); } catch (e) { console.error(e); }
+      await env.DB.prepare(`INSERT INTO update_logs (project_id, user_id, action, description, script_version_id, metadata) VALUES (?, ?, ?, ?, NULL, ?)`).bind(version.project_id, admin.id, "script_deleted", `${admin.name || admin.email} removed screenplay version ${version.version_number}.`, JSON.stringify({ version_id: version.id, file_name: version.file_name })).run();
+      return json({ ok: true, message: "Screenplay version removed." });
     }
 
     /*
