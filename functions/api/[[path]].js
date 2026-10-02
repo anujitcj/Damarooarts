@@ -194,15 +194,15 @@ export async function onRequest(context) {
       if (!version) return json({ ok: false, error: "No screenplay uploaded yet" }, 404);
       const object = await env.FILES.get(version.file_key);
       if (!object) return json({ ok: false, error: "Screenplay file not found in private storage" }, 404);
-      return new Response(object.body, {
-        status: 200,
-        headers: {
-          "Content-Type": object.httpMetadata?.contentType || "application/pdf",
-          "Content-Disposition": `inline; filename="${String(version.file_name).replace(/"/g, "")}"`,
-          "Cache-Control": "private, no-store, max-age=0",
-          ...scriptHeaders(version),
-        },
+      const headers = new Headers({
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `inline; filename="${String(version.file_name).replace(/"/g, "")}"`,
+        "Cache-Control": "private, no-store, max-age=0, must-revalidate",
+        "X-Content-Type-Options": "nosniff",
+        ...scriptHeaders(version),
       });
+      if (typeof object.size === "number") headers.set("Content-Length", String(object.size));
+      return new Response(object.body, { status: 200, headers });
     }
 
     if (path === `projects/${PROJECT_SLUG}/script` && method === "POST") {
