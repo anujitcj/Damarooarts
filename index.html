@@ -54,89 +54,10 @@
     <iframe id="sb-frame" src="about:blank" title="Storyboard Simulator"></iframe>
   </section>
 
-  <section class="view" id="view-projects" role="tabpanel" aria-labelledby="tab-projects">
-    <div class="proj" id="projects-home">
-      <div class="proj-head">
-        <div><p class="proj-kicker">Projects</p><h2>In production.</h2><p>Everything currently in production.</p></div>
-        <span class="proj-count">01 ACTIVE PROJECT</span>
-      </div>
-      <div class="project-card-wrap">
-        <button class="project-card" id="open-wbm" type="button" aria-label="Open We Before Me project">
-          <div class="project-card-main"><span class="project-status">PRE-PRODUCTION</span><h3>We Before Me</h3><p>Private production workspace for the film.</p><span class="project-open">Open project <b>↗</b></span></div>
-          <div class="project-card-side"><div class="project-mark">W<span>·</span>BM</div><div class="project-meta"><span>Script</span><span>Discussion</span><span>Admin</span></div></div>
-        </button>
-      </div>
-      <div class="proj-footnote"><span class="foot-rule"></span><span>DMAROO ARTS · PRODUCTION</span></div>
-    </div>
-
-    <div class="project-detail" id="wbm-detail" hidden>
-      <div class="detail-top"><button class="back-projects" id="back-projects" type="button">← Projects</button><span class="detail-code">PROJECT 001 · PRIVATE</span></div>
-      <div class="detail-heading">
-        <div><span class="project-status">PRE-PRODUCTION</span><h2>We Before Me</h2><p>Production workspace. Script, discussion and administration.</p></div>
-        <div class="detail-lock"><span class="lock-dot"></span>AUTHORISED USERS ONLY</div>
-      </div>
-
-      <div class="workspace-tabs" role="tablist" aria-label="Project workspace">
-        <button class="workspace-tab active" id="workspace-script-tab" data-workspace="script" type="button">Script & Discussion</button>
-        <button class="workspace-tab admin-only" id="workspace-admin-tab" data-workspace="admin" type="button" hidden>Administration</button>
-      </div>
-
-      <div class="workspace-view active" id="workspace-script" data-workspace-view="script">
-        <div class="detail-grid">
-          <section class="script-panel">
-            <div class="panel-head">
-              <div><span class="panel-kicker">01 · SCRIPT</span><h3>Screenplay <span id="script-version-label"></span></h3></div>
-              <span class="private-badge">PRIVATE</span>
-            </div>
-
-            <div class="script-tools" id="script-tools">
-              <div class="upload-box editor-only" id="upload-box" hidden>
-                <form id="upload-form">
-                  <div class="upload-row"><label class="file-label"><input id="script-file" name="file" type="file" accept="application/pdf,.pdf" required /><span>Choose screenplay PDF</span></label><input id="upload-notes" name="notes" type="text" maxlength="300" placeholder="Version notes (optional)" /><button class="btn-primary" type="submit">Upload New Version</button></div>
-                  <div class="upload-status" id="upload-status" role="status" aria-live="polite"></div>
-                </form>
-              </div>
-              <button class="comment-mode-btn" id="comment-mode" type="button" aria-pressed="false">Comment mode: OFF</button>
-              <span class="script-tool-hint">Enable comment mode, then select text or click a page location.</span>
-            </div>
-
-            <div class="script-reader" id="script-reader">
-              <div class="script-empty" id="script-empty"><div class="script-icon">S</div><h4>Loading screenplay.</h4><p>Fetching the latest authorised screenplay from the private production store.</p><span class="reader-note">PRIVATE DOCUMENT · LATEST VERSION ONLY</span></div>
-              <div class="pdf-viewer" id="pdf-viewer" hidden>
-                <div class="pdf-toolbar" id="pdf-toolbar">
-                  <button type="button" id="pdf-prev" aria-label="Previous page">←</button><span>PAGE <b id="pdf-page">1</b> / <b id="pdf-pages">1</b></span><button type="button" id="pdf-next" aria-label="Next page">→</button><span class="pdf-sep"></span>
-                  <button type="button" id="pdf-zoom-out" aria-label="Zoom out">−</button><span id="pdf-zoom-label">100%</span><button type="button" id="pdf-zoom-in" aria-label="Zoom in">+</button><span class="pdf-sep"></span><button type="button" id="pdf-fit" aria-label="Fit page">FIT</button>
-                </div>
-                <div class="pdf-stage" id="pdf-stage"><div class="pdf-page-wrap" id="pdf-page-wrap"><canvas id="pdf-canvas"></canvas><div class="textLayer" id="pdf-text-layer"></div><div class="pdf-marker-layer" id="pdf-marker-layer"></div></div></div>
-                <div class="pdf-hint" id="pdf-hint">COMMENT MODE OFF · TURN IT ON TO ANCHOR A COMMENT</div>
-              </div>
-            </div>
-          </section>
-
-          <aside class="project-sidebar">
-            <section class="side-panel discussion-panel">
-              <div class="panel-head compact"><div><span class="panel-kicker">02 · DISCUSSION</span><h3>Production notes</h3></div><span class="comment-count">0</span></div>
-              <div class="discussion-list" id="discussion-list"></div>
-              <div class="discussion-empty" id="discussion-empty"><span class="discussion-mark">+</span><p>Comments anchored to the script will appear here.</p><span>AUTHOR · COMMENT · LOCATION · TIME</span></div>
-            </section>
-            <section class="side-panel"><div class="panel-head compact"><div><span class="panel-kicker">03 · CURRENT VERSION</span><h3>Script status</h3></div></div><div class="status-panel" id="script-status-panel"><span class="status-dot"></span><div><strong id="status-version">No screenplay loaded</strong><small id="status-meta">The latest private version will appear here.</small></div></div></section>
-          </aside>
-        </div>
-      </div>
-
-      <div class="workspace-view" id="workspace-admin" data-workspace-view="admin" hidden>
-        <div class="admin-grid">
-          <section class="admin-panel"><div class="panel-head"><div><span class="panel-kicker">ADMIN · USERS</span><h3>Authorised users</h3></div><span class="private-badge">ADMIN ONLY</span></div>
-            <form class="admin-add-form" id="admin-add-form"><input id="admin-email" type="email" placeholder="Google account email" required /><input id="admin-name" type="text" placeholder="Name" /><select id="admin-role"><option value="reader">Reader</option><option value="script_editor">Script Editor</option><option value="admin">Admin</option></select><button class="btn-primary" type="submit">Authorise User</button></form>
-            <div class="admin-status" id="admin-user-status"></div><div class="admin-user-list" id="admin-user-list"></div>
-          </section>
-          <section class="admin-panel"><div class="panel-head"><div><span class="panel-kicker">ADMIN · VERSIONS</span><h3>Screenplay archive</h3></div></div><div class="admin-version-list" id="admin-version-list"></div></section>
-          <section class="admin-panel admin-log-panel"><div class="panel-head"><div><span class="panel-kicker">ADMIN · AUDIT</span><h3>Update log</h3></div></div><div class="admin-log-list" id="admin-log-list"></div></section>
-        </div>
-      </div>
-    </div>
+  <section class="view project-shell" id="view-projects" role="tabpanel" aria-labelledby="tab-projects">
+    <div class="embedded-app" id="projects-load"><span></span></div>
+    <iframe id="projects-frame" src="about:blank" title="Projects"></iframe>
   </section>
-  <div class="wipe" aria-hidden="true"></div>
 </main>
 
 <div class="comment-modal" id="comment-modal" hidden>

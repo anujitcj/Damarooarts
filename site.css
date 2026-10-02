@@ -271,3 +271,13 @@ body.project-open #projects-home{display:none!important}
   body.project-open .project-detail{padding:14px 14px 22px}
   body.project-open .detail-grid{min-height:0}
 }
+
+/* Separate Projects application shell */
+#view-projects.project-shell { position:relative; width:100%; height:calc(100dvh - 72px); min-height:0; overflow:hidden; padding:0; }
+#projects-frame { display:block; width:100%; height:100%; min-height:0; border:0; background:#fff; opacity:0; transition:opacity .25s ease; }
+#projects-frame.ready { opacity:1; }
+#projects-load { position:absolute; inset:0; z-index:2; display:grid; place-items:center; pointer-events:none; background:#fff; transition:opacity .2s ease; }
+#projects-load span { width:22px; height:22px; border:2px solid rgba(0,0,0,.14); border-top-color:currentColor; border-radius:50%; animation:projects-spin .7s linear infinite; }
+#projects-load.done { opacity:0; }
+@keyframes projects-spin { to { transform:rotate(360deg); } }
+@media (max-width:700px) { #view-projects.project-shell { height:calc(100dvh - 62px); } }
