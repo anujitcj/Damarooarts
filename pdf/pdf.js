@@ -43,7 +43,6 @@
     if (cached) return cached;
 
     cached = (async () => {
-      // Primary: current PDF.js module build.
       try {
         const pdfjs = await import(
           "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs"
@@ -54,8 +53,6 @@
 
         return pdfjs;
       } catch (primaryError) {
-        // Fallback: classic build. This avoids blank viewers on browsers/
-        // deployments that reject the module worker path.
         const pdfjs = await loadClassic(
           "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"
         );
@@ -75,7 +72,6 @@
     }
   }
 
-  // Preload the viewer library without blocking projects.html startup.
   loadPdfJs().catch(() => {});
 
   window.DamarooPDF = {

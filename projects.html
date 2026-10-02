@@ -132,10 +132,102 @@ async function createWip(){
 }
 async function loadProject(){const {data}=await api('projects/we-before-me');state.project=data.project;await Promise.all([loadScript(),loadComments()]);}
 async function getPdfJs(){return window.DamarooPDF.getPdfJs()}
-async function loadScript(){try{const {res}=await api('projects/we-before-me/script');state.scriptVersion=Number(res.headers.get('X-Script-Version')||0);$('#version').textContent=state.scriptVersion?`V${String(state.scriptVersion).padStart(3,'0')}`:'';const b=await res.arrayBuffer();await openPdf(b);$('#status').textContent=`Latest script · V${String(state.scriptVersion).padStart(3,'0')}`;const uploadedAt=res.headers.get('X-Script-Uploaded-At');const fileName=decodeURIComponent(res.headers.get('X-Script-File-Name')||'Latest screenplay');$('#status-time').textContent=uploadedAt?`${fmt(uploadedAt)} · ${fileName}`:fileName;}catch(e){$('#empty').innerHTML='<strong>NO SCRIPT</strong><span>'+esc(e.data?.error||e.message)+'</span>';}}
-async function openPdf(buffer){const p=await getPdfJs();if(state.pdf)try{await state.pdf.destroy()}catch{}state.pdf=await p.getDocument({data:buffer}).promise;state.page=1;state.scale=1;await fit();state.scale=state.fit;await render();}
-async function fit(){if(!state.pdf)return;const pg=await state.pdf.getPage(state.page),v=pg.getViewport({scale:1}),st=$('#pdf-stage');state.fit=Math.min(Math.max(280,st.clientWidth-48)/v.width,Math.max(360,st.clientHeight-48)/v.height,1.8)}
-async function render(){if(!state.pdf)return;const p=await getPdfJs(),pg=await state.pdf.getPage(state.page),v=pg.getViewport({scale:state.scale}),c=$('#canvas'),ctx=c.getContext('2d',{alpha:false}),tl=$('#text-layer'),page=$('#page'),out=Math.min(devicePixelRatio||1,2);c.width=v.width*out;c.height=v.height*out;c.style.width=v.width+'px';c.style.height=v.height+'px';page.style.width=v.width+'px';page.style.height=v.height+'px';tl.innerHTML='';tl.style.width=v.width+'px';tl.style.height=v.height+'px';await pg.render({canvasContext:ctx,viewport:v,transform:out!==1?[out,0,0,out,0,0]:null}).promise;const tc=await pg.getTextContent();await p.renderTextLayer({textContentSource:tc,container:tl,viewport:v}).promise;$('#page-no').textContent=state.page;$('#pages').textContent=state.pdf.numPages;$('#zoom').textContent=Math.round(state.scale*100)+'%';$('#prev').disabled=state.page<=1;$('#next').disabled=state.page>=state.pdf.numPages;renderMarkers();}
+async function loadScript(){
+  try{
+    $('#empty').classList.remove('hidden');
+    $('#page').classList.add('hidden');
+    $('#empty').innerHTML='<div><strong>LOADING SCRIPT</strong><span>Fetching the latest authorised screenplay.</span></div>';
+
+    const {res}=await api('projects/we-before-me/script');
+    state.scriptVersion=Number(res.headers.get('X-Script-Version')||0);
+    $('#version').textContent=state.scriptVersion?`V${String(state.scriptVersion).padStart(3,'0')}`:'';
+
+    const b=await res.arrayBuffer();
+    if(!b.byteLength)throw new Error('The authorised screenplay response was empty.');
+
+    await openPdf(b);
+
+    $('#status').textContent=`Latest script · V${String(state.scriptVersion).padStart(3,'0')}`;
+    const uploadedAt=res.headers.get('X-Script-Uploaded-At');
+    const fileName=decodeURIComponent(res.headers.get('X-Script-File-Name')||'Latest screenplay');
+    $('#status-time').textContent=uploadedAt?`${fmt(uploadedAt)} · ${fileName}`:fileName;
+  }catch(e){
+    $('#page').classList.add('hidden');
+    $('#empty').classList.remove('hidden');
+    $('#empty').innerHTML='<strong>NO SCRIPT</strong><span>'+esc(e.data?.error||e.message)+'</span>';
+    console.error('Projects PDF load failed:',e);
+  }
+}
+async function openPdf(buffer){
+  const p=await getPdfJs();
+  if(state.pdf)try{await state.pdf.destroy()}catch{}
+  state.pdf=await p.getDocument({data:buffer}).promise;
+  state.page=1;
+  state.scale=1;
+  await fit();
+  state.scale=state.fit;
+  await render();
+}
+async function fit(){
+  if(!state.pdf)return;
+  const pg=await state.pdf.getPage(state.page);
+  const v=pg.getViewport({scale:1});
+  const st=$('#pdf-stage');
+  state.fit=Math.min(
+    Math.max(280,st.clientWidth-48)/v.width,
+    Math.max(360,st.clientHeight-48)/v.height,
+    1.8
+  );
+}
+async function render(){
+  if(!state.pdf)return;
+  const p=await getPdfJs();
+  const pg=await state.pdf.getPage(state.page);
+  const v=pg.getViewport({scale:state.scale});
+  const c=$('#canvas');
+  const ctx=c.getContext('2d',{alpha:false});
+  const tl=$('#text-layer');
+  const page=$('#page');
+  const empty=$('#empty');
+  const out=Math.min(devicePixelRatio||1,2);
+
+  c.width=v.width*out;
+  c.height=v.height*out;
+  c.style.width=v.width+'px';
+  c.style.height=v.height+'px';
+  page.style.width=v.width+'px';
+  page.style.height=v.height+'px';
+  tl.innerHTML='';
+  tl.style.width=v.width+'px';
+  tl.style.height=v.height+'px';
+
+  await pg.render({
+    canvasContext:ctx,
+    viewport:v,
+    transform:out!==1?[out,0,0,out,0,0]:null
+  }).promise;
+
+  try{
+    const tc=await pg.getTextContent();
+    if(typeof p.renderTextLayer==='function'){
+      await p.renderTextLayer({
+        textContentSource:tc,
+        container:tl,
+        viewport:v
+      }).promise;
+    }
+  }catch{}
+
+  page.classList.remove('hidden');
+  empty.classList.add('hidden');
+
+  $('#page-no').textContent=state.page;
+  $('#pages').textContent=state.pdf.numPages;
+  $('#zoom').textContent=Math.round(state.scale*100)+'%';
+  $('#prev').disabled=state.page<=1;
+  $('#next').disabled=state.page>=state.pdf.numPages;
+  renderMarkers();
+}
 function anchorOf(c){try{return JSON.parse(c.anchor_value||'{}')}catch{return{}}}
 function renderMarkers(){const layer=$('#markers');layer.innerHTML='';if(!state.mode)return;state.comments.filter(c=>anchorOf(c).page==state.page).forEach(c=>{const a=anchorOf(c),b=document.createElement('button');b.className='marker'+(Number(c.resolved)?' resolved':'');b.style.left=a.x*100+'%';b.style.top=a.y*100+'%';b.title=c.body||'';b.onclick=e=>{e.stopPropagation();openComment(c)};layer.appendChild(b)})}
 async function loadComments(){const {data}=await api('projects/we-before-me/comments');state.comments=data.comments||[];$('#comment-count').textContent=state.comments.length;renderMarkers();renderSidebarComments();}
