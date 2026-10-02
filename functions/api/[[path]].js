@@ -71,6 +71,16 @@ function safeFileName(name) {
     .slice(0, 180);
 }
 
+function slugifyProjectName(name) {
+  const base = String(name || "project")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 70);
+  return base || "project";
+}
+
 function scriptHeaders(version) {
   return {
     "X-Script-Version": String(version.version_number),
@@ -100,6 +110,73 @@ export async function onRequest(context) {
       if (!user) return json({ ok: false, authenticated: true, authorized: false, error: "Account not authorized" }, 403);
       if (!Number(user.active)) return json({ ok: false, authenticated: true, authorized: false, error: "Account disabled" }, 403);
       return json({ ok: true, user });
+    }
+
+    if (path === "projects" && method === "GET") {
+      const user = await requireUser(request, env);
+      const result = await env.DB.prepare(`
+        SELECT
+          p.id,
+          p.name,
+          p.slug,
+          p.description,
+          p.status,
+          p.created_at,
+          p.updated_at,
+          CASE WHEN ps.id IS NULL THEN 0 ELSE 1 END AS signed_up,
+          (
+            SELECT COUNT(*)
+            FROM project_signups ps2
+            WHERE ps2.project_id = p.id
+          ) AS signup_count
+        FROM projects p
+        LEFT JOIN project_signups ps
+          ON ps.project_id = p.id
+         AND ps.user_id = ?
+        WHERE p.status IN ('in_production','wip')
+        ORDER BY
+          CASE WHEN p.slug = 'we-before-me' THEN 0 ELSE 1 END,
+          CASE WHEN p.status = 'wip' THEN 0 ELSE 1 END,
+          p.created_at ASC,
+          p.id ASC
+      `).bind(user.id).all();
+      return json({ ok: true, projects: result.results || [] });
+    }
+
+    const signupMatch = path.match(/^projects\/([^/]+)\/signup$/);
+    if (signupMatch && method === "POST") {
+      const user = await requireUser(request, env);
+      const slug = signupMatch[1].toLowerCase();
+      const project = await env.DB.prepare(`
+        SELECT id, name, slug, status
+        FROM projects
+        WHERE slug = ?
+        LIMIT 1
+      `).bind(slug).first();
+
+      if (!project) return json({ ok: false, error: "Project not found" }, 404);
+      if (project.status !== "wip") return json({ ok: false, error: "Sign-up is only available for WORK IN PROGRESS projects" }, 400);
+
+      const existing = await env.DB.prepare(`
+        SELECT id FROM project_signups WHERE project_id = ? AND user_id = ? LIMIT 1
+      `).bind(project.id, user.id).first();
+
+      if (existing) return json({ ok: true, already_signed_up: true, message: "You are already signed up." });
+
+      await env.DB.prepare(`
+        INSERT INTO project_signups (project_id, user_id)
+        VALUES (?, ?)
+      `).bind(project.id, user.id).run();
+
+      await logAction(env, {
+        projectId: project.id,
+        userId: user.id,
+        action: "project_signup",
+        description: `${user.name || user.email} signed up for WORK IN PROGRESS project ${project.name}.`,
+        metadata: { project_id: project.id, project_slug: project.slug },
+      });
+
+      return json({ ok: true, already_signed_up: false, message: `Signed up for ${project.name}.` }, 201);
     }
 
     if (path === `projects/${PROJECT_SLUG}` && method === "GET") {
@@ -289,6 +366,46 @@ export async function onRequest(context) {
       const inserted = await env.DB.prepare(`INSERT INTO comment_replies (comment_id, author_id, body) VALUES (?, ?, ?) RETURNING id`).bind(commentId, user.id, text).first();
       await logAction(env, { projectId: comment.project_id, userId: user.id, action: "comment_replied", description: `${user.name || user.email} replied to screenplay comment ${commentId}.`, versionId: comment.script_version_id, metadata: { comment_id: commentId, reply_id: inserted.id } });
       return json({ ok: true, reply_id: inserted.id }, 201);
+    }
+
+    if (path === "admin/projects" && method === "POST") {
+      const admin = await requireUser(request, env);
+      requireRole(admin, ["admin"]);
+
+      let body;
+      try { body = await request.json(); } catch { return json({ ok: false, error: "Invalid JSON body" }, 400); }
+
+      const name = typeof body.name === "string" ? body.name.trim() : "";
+      const description = typeof body.description === "string" ? body.description.trim() : "";
+      const status = typeof body.status === "string" ? body.status.trim() : "wip";
+
+      if (!name) return json({ ok: false, error: "Project name is required" }, 400);
+      if (name.length > 120) return json({ ok: false, error: "Project name is too long" }, 400);
+      if (description.length > 1000) return json({ ok: false, error: "Description is too long" }, 400);
+      if (status !== "wip") return json({ ok: false, error: "New projects can only be created as WORK IN PROGRESS projects" }, 400);
+
+      const baseSlug = slugifyProjectName(name);
+      let slug = baseSlug;
+      let suffix = 2;
+      while (await env.DB.prepare(`SELECT id FROM projects WHERE slug = ? LIMIT 1`).bind(slug).first()) {
+        slug = `${baseSlug}-${suffix++}`;
+      }
+
+      const inserted = await env.DB.prepare(`
+        INSERT INTO projects (name, slug, description, status)
+        VALUES (?, ?, ?, 'wip')
+        RETURNING id, name, slug, description, status, created_at, updated_at
+      `).bind(name, slug, description || null).first();
+
+      await logAction(env, {
+        projectId: inserted.id,
+        userId: admin.id,
+        action: "project_created",
+        description: `${admin.name || admin.email} created WORK IN PROGRESS project ${inserted.name}.`,
+        metadata: { project_id: inserted.id, project_slug: inserted.slug },
+      });
+
+      return json({ ok: true, project: inserted }, 201);
     }
 
     if (path === "admin/users" && method === "GET") {
