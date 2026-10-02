@@ -98,105 +98,36 @@ export async function onRequest(context) {
   try {
     if (method === "OPTIONS") return new Response(null, { status: 204 });
 
-    if (path === "health" && method === "GET") {
-      await env.DB.prepare("SELECT 1 AS ok").first();
-      return json({ ok: true, database: "connected", storage: !!env.FILES });
-    }
-
-    if (path === "me" && method === "GET") {
-      const accessEmail = getAccessEmail(request);
-      const user = await getCurrentUser(request, env);
-      if (!accessEmail) return json({ ok: false, authenticated: false }, 401);
-      if (!user) return json({ ok: false, authenticated: true, authorized: false, error: "Account not authorized" }, 403);
-      if (!Number(user.active)) return json({ ok: false, authenticated: true, authorized: false, error: "Account disabled" }, 403);
-      return json({ ok: true, user });
-    }
-
     if (path === "projects" && method === "GET") {
-      const user = await requireUser(request, env);
+      await requireUser(request, env);
       const result = await env.DB.prepare(`
-        SELECT
-          p.id,
-          p.name,
-          p.slug,
-          p.description,
-          p.status,
-          p.created_at,
-          p.updated_at,
-          CASE WHEN ps.id IS NULL THEN 0 ELSE 1 END AS signed_up,
-          (
-            SELECT COUNT(*)
-            FROM project_signups ps2
-            WHERE ps2.project_id = p.id
-          ) AS signup_count
-        FROM projects p
-        LEFT JOIN project_signups ps
-          ON ps.project_id = p.id
-         AND ps.user_id = ?
-        WHERE p.status IN ('in_production','wip')
-        ORDER BY
-          CASE WHEN p.slug = 'we-before-me' THEN 0 ELSE 1 END,
-          CASE WHEN p.status = 'wip' THEN 0 ELSE 1 END,
-          p.created_at ASC,
-          p.id ASC
-      `).bind(user.id).all();
-      return json({ ok: true, projects: result.results || [] });
-    }
-
-    const signupMatch = path.match(/^projects\/([^/]+)\/signup$/);
-    if (signupMatch && method === "POST") {
-      const user = await requireUser(request, env);
-      const slug = signupMatch[1].toLowerCase();
-      const project = await env.DB.prepare(`
-        SELECT id, name, slug, status
+        SELECT id, name, slug, description, status, created_at, updated_at
         FROM projects
-        WHERE slug = ?
-        LIMIT 1
-      `).bind(slug).first();
-
-      if (!project) return json({ ok: false, error: "Project not found" }, 404);
-      if (project.status !== "wip") return json({ ok: false, error: "Sign-up is only available for WORK IN PROGRESS projects" }, 400);
-
-      const existing = await env.DB.prepare(`
-        SELECT id FROM project_signups WHERE project_id = ? AND user_id = ? LIMIT 1
-      `).bind(project.id, user.id).first();
-
-      if (existing) return json({ ok: true, already_signed_up: true, message: "You are already signed up." });
-
-      await env.DB.prepare(`
-        INSERT INTO project_signups (project_id, user_id)
-        VALUES (?, ?)
-      `).bind(project.id, user.id).run();
-
-      await logAction(env, {
-        projectId: project.id,
-        userId: user.id,
-        action: "project_signup",
-        description: `${user.name || user.email} signed up for WORK IN PROGRESS project ${project.name}.`,
-        metadata: { project_id: project.id, project_slug: project.slug },
-      });
-
-      return json({ ok: true, already_signed_up: false, message: `Signed up for ${project.name}.` }, 201);
+        ORDER BY status DESC, created_at DESC
+      `).all();
+      return json({ ok: true, projects: result.results || [] });
     }
 
     if (path === `projects/${PROJECT_SLUG}` && method === "GET") {
       const user = await requireUser(request, env);
       const project = await getProject(env);
       if (!project) return json({ ok: false, error: "Project not found" }, 404);
-      return json({ ok: true, project, user });
+      return json({ ok: true, project });
     }
 
     if (path === `projects/${PROJECT_SLUG}/script` && method === "GET") {
       await requireUser(request, env);
       const project = await getProject(env);
       if (!project) return json({ ok: false, error: "Project not found" }, 404);
+
       const version = await getLatestVersion(env, project.id);
-      if (!version) return json({ ok: false, error: "No screenplay uploaded yet" }, 404);
+      if (!version) return json({ ok: false, error: "No screenplay available" }, 404);
+
       const object = await env.FILES.get(version.file_key);
-      if (!object) return json({ ok: false, error: "Screenplay file not found in private storage" }, 404);
+      if (!object) return json({ ok: false, error: "Script file not accessible" }, 404);
+
       const headers = new Headers({
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="${String(version.file_name).replace(/"/g, "")}"`,
         "Cache-Control": "private, no-store, max-age=0, must-revalidate",
         "X-Content-Type-Options": "nosniff",
         ...scriptHeaders(version),
@@ -363,8 +294,18 @@ export async function onRequest(context) {
       try { body = await request.json(); } catch { return json({ ok: false, error: "Invalid JSON body" }, 400); }
       const text = typeof body.body === "string" ? body.body.trim() : "";
       if (!text) return json({ ok: false, error: "Reply cannot be empty" }, 400);
-      const inserted = await env.DB.prepare(`INSERT INTO comment_replies (comment_id, author_id, body) VALUES (?, ?, ?) RETURNING id`).bind(commentId, user.id, text).first();
-      await logAction(env, { projectId: comment.project_id, userId: user.id, action: "comment_replied", description: `${user.name || user.email} replied to screenplay comment ${commentId}.`, versionId: comment.script_version_id, metadata: { comment_id: commentId, reply_id: inserted.id } });
+      const inserted = await env.DB.prepare(`
+        INSERT INTO comment_replies (comment_id, author_id, body) VALUES (?, ?, ?) RETURNING id
+      `).bind(commentId, user.id, text).first();
+      
+      await logAction(env, {
+        projectId: comment.project_id,
+        userId: user.id,
+        action: "comment_replied",
+        description: `${user.name || user.email} replied to screenplay comment ${commentId}.`,
+        versionId: comment.script_version_id,
+        metadata: { comment_id: commentId, reply_id: inserted.id }
+      });
       return json({ ok: true, reply_id: inserted.id }, 201);
     }
 
@@ -448,16 +389,16 @@ export async function onRequest(context) {
       updates.push("updated_at = datetime('now')"); values.push(targetId);
       await env.DB.prepare(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`).bind(...values).run();
       const updated = await env.DB.prepare(`SELECT id, email, name, role, active, created_at, updated_at FROM users WHERE id = ? LIMIT 1`).bind(targetId).first();
-      const project = await getProject(env);
-      if (project) await logAction(env, { projectId: project.id, userId: admin.id, action: "user_updated", description: `${admin.name || admin.email} updated user ${target.email}.`, metadata: { target_user_id: target.id, target_email: target.email, changes: body } });
+      await logAction(env, { projectId: null, userId: admin.id, action: "user_modified", description: `${admin.name || admin.email} modified user ${target.email}.`, metadata: { target_user_id: targetId, target_email: target.email } });
       return json({ ok: true, user: updated });
     }
 
     if (path === `admin/projects/${PROJECT_SLUG}/versions` && method === "GET") {
       const admin = await requireUser(request, env); requireRole(admin, ["admin"]);
-      const project = await getProject(env); if (!project) return json({ ok: false, error: "Project not found" }, 404);
+      const project = await getProject(env);
+      if (!project) return json({ ok: false, error: "Project not found" }, 404);
       const result = await env.DB.prepare(`
-        SELECT sv.id, sv.project_id, sv.version_number, sv.file_name, sv.file_key, sv.notes, sv.created_at,
+        SELECT sv.id, sv.version_number, sv.file_name, sv.uploaded_by, sv.notes, sv.created_at,
                u.name AS uploaded_by_name, u.email AS uploaded_by_email
         FROM script_versions sv LEFT JOIN users u ON u.id = sv.uploaded_by
         WHERE sv.project_id = ? ORDER BY sv.version_number DESC
@@ -465,56 +406,35 @@ export async function onRequest(context) {
       return json({ ok: true, versions: result.results || [] });
     }
 
-    const adminVersionMatch = path.match(new RegExp(`^admin/projects/${PROJECT_SLUG}/versions/(\\d+)$`));
-    if (adminVersionMatch && method === "GET") {
+    const versionMatch = path.match(new RegExp(`^admin/projects/${PROJECT_SLUG}/versions/(\\d+)$`));
+    if (versionMatch && method === "DELETE") {
       const admin = await requireUser(request, env); requireRole(admin, ["admin"]);
-      const versionId = Number(adminVersionMatch[1]);
-      const version = await env.DB.prepare(`
-        SELECT sv.*, u.name AS uploaded_by_name, u.email AS uploaded_by_email
-        FROM script_versions sv LEFT JOIN users u ON u.id = sv.uploaded_by WHERE sv.id = ? LIMIT 1
-      `).bind(versionId).first();
+      const versionId = Number(versionMatch[1]);
+      const version = await env.DB.prepare(`SELECT id, file_key, version_number, project_id FROM script_versions WHERE id = ? LIMIT 1`).bind(versionId).first();
       if (!version) return json({ ok: false, error: "Version not found" }, 404);
-      return json({ ok: true, version });
-    }
-
-    if (adminVersionMatch && method === "DELETE") {
-      const admin = await requireUser(request, env); requireRole(admin, ["admin"]);
-      const versionId = Number(adminVersionMatch[1]);
-      const project = await getProject(env); if (!project) return json({ ok: false, error: "Project not found" }, 404);
-      const version = await env.DB.prepare(`SELECT id, project_id, version_number, file_key, file_name FROM script_versions WHERE id = ? AND project_id = ? LIMIT 1`).bind(versionId, project.id).first();
-      if (!version) return json({ ok: false, error: "Version not found" }, 404);
-
-      const latest = await getLatestVersion(env, project.id);
-      const wasLatest = latest && latest.id === version.id;
-
-      await env.DB.prepare(`DELETE FROM comments WHERE script_version_id = ?`).bind(versionId).run();
+      await env.FILES.delete(version.file_key).catch(() => {});
       await env.DB.prepare(`DELETE FROM script_versions WHERE id = ?`).bind(versionId).run();
-      const storageDeleted = await env.FILES.delete(version.file_key).then(() => true).catch(() => false);
-
-      await logAction(env, { projectId: project.id, userId: admin.id, action: "script_deleted", description: `${admin.name || admin.email} removed screenplay version ${version.version_number}.`, metadata: { version_id: version.id, file_name: version.file_name, was_latest: wasLatest, storage_deleted: storageDeleted } });
-      const newLatest = await getLatestVersion(env, project.id);
-      return json({ ok: true, deleted_version: version.version_number, deleted_file: version.file_name, was_latest: wasLatest, new_latest_version: newLatest?.version_number || null, storage_deleted: storageDeleted });
+      await logAction(env, { projectId: version.project_id, userId: admin.id, action: "version_deleted", description: `${admin.name || admin.email} deleted screenplay version ${version.version_number}.`, metadata: { file_key: version.file_key } });
+      return json({ ok: true, message: "Version deleted successfully." });
     }
 
     if (path === `admin/projects/${PROJECT_SLUG}/logs` && method === "GET") {
       const admin = await requireUser(request, env); requireRole(admin, ["admin"]);
-      const project = await getProject(env); if (!project) return json({ ok: false, error: "Project not found" }, 404);
+      const project = await getProject(env);
+      if (!project) return json({ ok: false, error: "Project not found" }, 404);
       const result = await env.DB.prepare(`
-        SELECT l.id, l.action, l.description, l.metadata, l.created_at,
-               u.id AS user_id, u.name AS user_name, u.email AS user_email,
-               sv.version_number AS script_version
-        FROM update_logs l
-        JOIN users u ON u.id = l.user_id
-        LEFT JOIN script_versions sv ON sv.id = l.script_version_id
-        WHERE l.project_id = ? ORDER BY l.created_at DESC, l.id DESC LIMIT 500
+        SELECT l.id, l.action, l.description, l.created_at,
+               u.name AS user_name, u.email AS user_email
+        FROM update_logs l LEFT JOIN users u ON u.id = l.user_id
+        WHERE l.project_id = ? ORDER BY l.created_at DESC LIMIT 100
       `).bind(project.id).all();
       return json({ ok: true, logs: result.results || [] });
     }
 
-    return json({ ok: false, error: "Not found" }, 404);
+    return json({ ok: false, error: "Endpoint not found" }, 404);
   } catch (error) {
+    console.error("Request error:", error);
     if (error instanceof Response) return error;
-    console.error("Projects API error:", error);
-    return json({ ok: false, error: "Internal server error" }, 500);
+    return json({ ok: false, error: error.message || "Internal server error" }, 500);
   }
 }
