@@ -358,6 +358,7 @@ select{appearance:none;cursor:pointer}
   <span class="ico">⛶</span> View Final Shot
 </button>
         </div>
+                <button class="btn-action" id="btn-toggle-path"><span class="ico">◎</span> Hide Anchors &amp; Trail</button>
       </div>
       <div class="divider"></div>
       <!-- TIMELINE -->
@@ -433,6 +434,8 @@ select{appearance:none;cursor:pointer}
         <div><span class="key">Mouse</span> Look</div>
         <div><span class="key">Shift</span> Fast</div>
         <div><span class="key">Esc</span> Release</div>
+                <div><span class="key">G</span> God Entity</div>
+        <div><span class="key">T</span> Anchor</div>
       </div>
       <div class="mode-banner" id="mode-banner">CAMERA PATH</div>
       <div class="dist-warn" id="dist-warn">Distance out of range.</div>
@@ -603,6 +606,7 @@ const STATE={
     objectMoveMode:false,
     fov:60,
     flySpeed:5,
+    showPath:true,
   }
 };
 
@@ -832,11 +836,13 @@ function buildAnchorMesh(anchor){
 
 function rebuildPath(){
   if(pathLine.obj){scene.remove(pathLine.obj);pathLine.obj.geometry.dispose();pathLine.obj=null;}
-  const shot=activeShot();if(!shot||shot.cameraPath.anchors.length<2)return;
-  const pts=shot.cameraPath.anchors.map(a=>new THREE.Vector3(a.pos.x,a.pos.y,a.pos.z));
+  const shot=activeShot();
+  if(!shot||shot.cameraPath.anchors.length<2||!shot.cameraFrames.length)return;
+  // trail = the same smooth spline the camera travels
+  const pts=shot.cameraFrames.map(f=>new THREE.Vector3(f.position.x,f.position.y,f.position.z));
   const geo=new THREE.BufferGeometry().setFromPoints(pts);
-  const mat=new THREE.LineBasicMaterial({color:0x60C4F0,linewidth:2});
-  pathLine.obj=new THREE.Line(geo,mat);scene.add(pathLine.obj);
+  const lineMat=new THREE.LineBasicMaterial({color:0x60C4F0,linewidth:2});
+  pathLine.obj=new THREE.Line(geo,lineMat);scene.add(pathLine.obj);
 }
 
 function syncScene(){
@@ -899,9 +905,9 @@ const OBJ_CATALOGUE=[
 function objCatColor(cat){return{character:'#3B82C4',furniture:'#8B93A3',architecture:'#A07850',prop:'#60C4F0',vehicle:'#F5B301'}[cat]||'#8B93A3';}
 
 const OBJ_DEFAULT_ACTIONS={
-  man:{pose:'standing',leftArm:'down',rightArm:'down',head:'forward',build:'average',shirt:'casual'},
-  woman:{pose:'standing',leftArm:'down',rightArm:'down',head:'forward',build:'average',shirt:'casual'},
-  child:{pose:'standing',leftArm:'down',rightArm:'down',head:'forward',build:'child',shirt:'casual'},
+  man:{pose:'standing',leftArm:'down',rightArm:'down',head:'forward',build:'average',shirt:'casual',expression:'neutral'},
+  woman:{pose:'standing',leftArm:'down',rightArm:'down',head:'forward',build:'average',shirt:'casual',expression:'neutral'},
+  child:{pose:'standing',leftArm:'down',rightArm:'down',head:'forward',build:'child',shirt:'casual',expression:'neutral'},
   bed:{style:'double',blanket:'on',pillows:2,headboard:'on'},
   chair:{style:'dining',arms:'off',cushion:'on'},
   sofa:{style:'three-seat',cushions:'on',arms:'on'},
@@ -920,126 +926,127 @@ function ensureObjectActions(obj){
 }
 function mat(c,r=.7,m=0){return new THREE.MeshStandardMaterial({color:new THREE.Color(c),roughness:r,metalness:m});}
 function addPart(g,geo,material,pos,rot){const m=new THREE.Mesh(geo,material);if(pos)m.position.set(...pos);if(rot)m.rotation.set(...rot);m.castShadow=true;m.receiveShadow=true;g.add(m);return m;}
-function cyl(r1,r2,h,seg=16){return new THREE.CylinderGeometry(r1,r2,h,seg);}
-function roundedBox(w,h,d,r=.06,segments=3){
-  // Beveled-looking box without external geometry dependencies.
-  const g=new THREE.Group();
-  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),null); // replaced by caller material
-  return new THREE.BoxGeometry(w,h,d);
-}
-function makeJoint(g,matl,r=.07){return addPart(g,new THREE.SphereGeometry(r,12,8),matl,[0,0,0]);}
 
 function buildHumanoidMesh(col,h,type,action){
-  const g=new THREE.Group();
   const a=action||{};
+  const s=h/1.8, isChild=type==='child', isWoman=type==='woman';
+  const pose=['standing','sitting','sleeping','kneeling'].includes(a.pose)?a.pose:'standing';
+  const expr=['neutral','happy','sad'].includes(a.expression)?a.expression:'neutral';
+  const headK=isChild?1.22:1, F=s*headK;
+  const shW=isChild?.165:isWoman?.168:.19, hipX=isWoman?.095:.1;
+  const skinC=isChild?'#E2B08C':isWoman?'#C98C68':'#B97855';
+  const skin=mat(skinC,.8), cloth=mat(col,.75,.02), clothD=mat(new THREE.Color(col).multiplyScalar(.62),.8,.02);
+  const hair=mat(isChild?'#4A2F20':isWoman?'#2B1D15':'#1E1612',.9);
+  const shoe=mat('#1C1B1F',.55,.05), eyeW=mat('#F2EFEA',.25), iris=mat('#3B2A1F',.3), brow=mat('#2A1E17',.9), lip=mat('#8A4A46',.5);
+  const root=new THREE.Group(), body=new THREE.Group();
+  root.add(body);
+  // base units are for a 1.8 m adult; J converts them to world units
+  const J=(x,y,z)=>new THREE.Vector3(x*s,y*s,z*s);
+  const bone=(A,B,rA,rB,m)=>{
+    const d=B.clone().sub(A),L=d.length();
+    const me=new THREE.Mesh(new THREE.CylinderGeometry(rB*s,rA*s,L,14),m);
+    me.position.copy(A).add(B).multiplyScalar(.5);
+    me.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize());
+    me.castShadow=true;me.receiveShadow=true;body.add(me);return me;
+  };
+  const ball=(p,r,m)=>{const me=new THREE.Mesh(new THREE.SphereGeometry(r*s,16,12),m);me.position.copy(p);me.castShadow=true;body.add(me);return me;};
 
-  const skin=mat(type==='woman'?'#C98C68':'#B97855',.82,0);
-  const skin2=mat('#E0A17C',.84,0);
-  const cloth=mat(col,.72,.03);
-  const clothDark=mat(new THREE.Color(col).multiplyScalar(.58),.78,.02);
-  const hair=mat(type==='woman'?'#2B211D':'#241A16',.9,0);
-  const shoe=mat('#181818',.82,.05);
-  const pose=['standing','sitting','sleeping'].includes(a.pose)?a.pose:'standing';
+  // leg / torso layout per pose
+  let pelY=.98, knY=.5, knZ=0, anY=.07, anZ=0, footDir=-1;
+  if(pose==='sitting'){pelY=.53;knZ=-.46;anZ=-.46;}
+  if(pose==='kneeling'){pelY=.56;knY=.1;knZ=-.06;anY=.05;anZ=.36;footDir=1;}
+  const shY=pelY+.5, shY2=shY-.03, headY=shY+.2;
 
-  let torsoY=1.25, headY=1.88;
-  if(pose==='sitting'){torsoY=1.10;headY=1.72;}
-  if(pose==='sleeping'){torsoY=.72;headY=.98;}
+  // torso (lathe profile, flattened front-to-back)
+  const prof=isWoman
+    ?[[.1,0],[.17,.04],[.15,.13],[.13,.21],[.17,.3],[.19,.38],[.17,.45],[.13,.5],[.1,.53]]
+    :[[.1,0],[.18,.05],[.19,.2],[.2,.35],[.19,.45],[.16,.51],[.11,.53]];
+  const torso=new THREE.Mesh(new THREE.LatheGeometry(prof.map(([r,y])=>new THREE.Vector2(r,y)),24),cloth);
+  torso.scale.set(s,s,s*.68);torso.position.copy(J(0,pelY,0));torso.castShadow=true;torso.receiveShadow=true;body.add(torso);
 
-  const torso=addPart(g,new THREE.CylinderGeometry(.29,.25,.82,16),cloth,[0,torsoY,0]);
-  torso.scale.set(1,.95,.72);
-  addPart(g,new THREE.CylinderGeometry(.22,.25,.18,16),clothDark,[0,torsoY-.43,0]);
+  // arms
+  const ARM={
+    down:{e:[.03,-.28,.02],w:[.02,-.56,0]},
+    hip:{e:[.2,-.18,-.08],w:[.12,-.5,-.02]},
+    forward:{e:[.02,-.2,-.2],w:[.02,-.2,-.46]},
+    raised:{e:[.25,.05,0],w:[.3,.32,0]},
+    crossed:{e:[.22,-.2,-.05],w:[.1,-.22,-.16]}
+  };
+  const sh=sd=>J(sd*shW,shY2,0);
+  const limbArm=(sd,mode)=>{
+    const m=ARM[mode]||ARM.down, crossed=mode==='crossed';
+    const S=sh(sd);
+    const E=S.clone().add(J(sd*m.e[0],m.e[1],m.e[2]));
+    const W=S.clone().add(J((crossed?-sd:sd)*m.w[0],m.w[1],m.w[2]));
+    bone(S,E,.052,.042,cloth);bone(E,W,.042,.032,skin);
+    ball(S,.052,cloth);ball(E,.042,cloth);
+    const dir=W.clone().sub(E).normalize(), hp=W.clone().add(dir.clone().multiplyScalar(.055*s));
+    const hand=new THREE.Mesh(new THREE.SphereGeometry(.045*s,14,10),skin);
+    hand.scale.set(.85,1.3,.55);hand.position.copy(hp);
+    hand.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
+    hand.castShadow=true;body.add(hand);
+  };
+  limbArm(-1,a.leftArm);
+  limbArm(1,a.rightArm);
 
-  const neck=addPart(g,cyl(.085,.1,.12,12),skin,[0,headY-.17,0]);
-  const head=addPart(g,new THREE.SphereGeometry(.19,20,14),skin2,[0,headY,0]);
-  head.scale.set(.9,1.08,.88);
-  addPart(g,new THREE.SphereGeometry(.195,18,12),hair,[0,headY+.055,-.005]).scale.set(.92,.72,.9);
+  // legs and shoes
+  const leg=sd=>{
+    const Hh=J(sd*hipX,pelY,0), Kn=J(sd*hipX,knY,knZ), An=J(sd*hipX,anY,anZ);
+    bone(Hh,Kn,.085,.058,clothD);ball(Hh,.085,clothD);ball(Kn,.058,clothD);
+    bone(Kn,An,.058,.04,clothD);
+    const foot=new THREE.Mesh(new THREE.BoxGeometry(.1*s,.07*s,.22*s),shoe);
+    foot.position.set(An.x,.035*s,An.z+footDir*.1*s);foot.castShadow=true;body.add(foot);
+  };
+  leg(-1);leg(1);
 
-  if(type==='woman'){
-    addPart(g,new THREE.SphereGeometry(.11,14,10),hair,[0,headY+.17,-.02]);
-    addPart(g,new THREE.CylinderGeometry(.035,.055,.12,10),hair,[.18,headY+.02,0]);
+  // neck and head (head group rotates for look direction)
+  bone(J(0,shY-.02,0),J(0,headY-.1,0),.05,.047,skin);
+  const HR=.118*F;
+  const hd=new THREE.Group();hd.position.copy(J(0,headY,0));body.add(hd);
+  if(a.head==='left')hd.rotation.y=.5;
+  if(a.head==='right')hd.rotation.y=-.5;
+  if(a.head==='up')hd.rotation.x=-.35;
+  if(a.head==='down')hd.rotation.x=.35;
+
+  const skull=new THREE.Mesh(new THREE.SphereGeometry(HR,28,20),skin);
+  skull.scale.set(.9,1.08,.95);skull.castShadow=true;hd.add(skull);
+  const jaw=new THREE.Mesh(new THREE.SphereGeometry(HR*.7,20,12),skin);
+  jaw.scale.set(.85,.7,.9);jaw.position.set(0,-HR*.55,-HR*.1);hd.add(jaw);
+  const cap=new THREE.Mesh(new THREE.SphereGeometry(HR*1.03,28,16,0,Math.PI*2,0,Math.PI*.38),hair);
+  cap.scale.set(.93,1.11,.98);cap.position.y=HR*.02;hd.add(cap);
+  if(isWoman){
+    const back=new THREE.Mesh(new THREE.SphereGeometry(HR*.98,24,16),hair);
+    back.scale.set(.95,1.45,.55);back.position.set(0,-HR*.75,HR*.42);hd.add(back);
   }
 
-  const eye=mat('#111',.55,0), lip=mat('#7A3030',.7,0);
-  addPart(g,new THREE.SphereGeometry(.018,8,6),eye,[-.065,headY+.025,-.175]);
-  addPart(g,new THREE.SphereGeometry(.018,8,6),eye,[.065,headY+.025,-.175]);
-  addPart(g,new THREE.BoxGeometry(.045,.012,.012),lip,[0,headY-.065,-.178]);
+  // face: eyes, brows, nose, ears, mouth (expression driven)
+  const fz=-.11*F;
+  [-1,1].forEach(sd=>{
+    const eye=new THREE.Mesh(new THREE.SphereGeometry(.024*F,14,10),eyeW);
+    eye.scale.set(1.25,expr==='happy'?.4:.75,.5);eye.position.set(sd*.042*F,.024*F,fz);hd.add(eye);
+    const pupil=new THREE.Mesh(new THREE.SphereGeometry(.012*F,12,8),iris);
+    pupil.scale.set(1,1,.45);pupil.position.set(sd*.042*F,.024*F,fz-.008*F);hd.add(pupil);
+    const b=new THREE.Mesh(new THREE.BoxGeometry(.05*F,.012*F,.016*F),brow);
+    b.position.set(sd*.042*F,(expr==='sad'?.061:expr==='happy'?.066:.06)*F,fz+.004*F);
+    b.rotation.z=expr==='sad'?-sd*.32:0;
+    hd.add(b);
+  });
+  const nose=new THREE.Mesh(new THREE.SphereGeometry(.024*F,14,10),skin);
+  nose.scale.set(.75,1.1,.9);nose.position.set(0,-.012*F,fz-.006*F);hd.add(nose);
+  [-1,1].forEach(sd=>{
+    const ear=new THREE.Mesh(new THREE.SphereGeometry(.024*F,12,8),skin);
+    ear.scale.set(.45,1,.7);ear.position.set(sd*.106*F,-.005*F,.005*F);hd.add(ear);
+  });
+  const mc={happy:.012,sad:-.012,neutral:0}[expr], mc2={happy:-.02,sad:.02,neutral:0}[expr];
+  const mouthCurve=new THREE.QuadraticBezierCurve3(
+    new THREE.Vector3(-.034*F,-.05*F+mc*F,-.1*F),
+    new THREE.Vector3(0,-.05*F+mc2*F,-.12*F),
+    new THREE.Vector3(.034*F,-.05*F+mc*F,-.1*F));
+  hd.add(new THREE.Mesh(new THREE.TubeGeometry(mouthCurve,12,.006*F,6,false),lip));
 
-  function arm(side,mode){
-    const ag=new THREE.Group();
-    ag.position.set(side*.34,torsoY+.22,0);
-
-    if(pose==='sleeping') ag.rotation.z=side*.08;
-    if(mode==='raised') ag.rotation.x=-Math.PI*.95;
-    if(mode==='forward') ag.rotation.z=side*.95;
-    if(mode==='crossed') ag.rotation.z=side*.95;
-    if(mode==='hip') ag.rotation.z=side*.9;
-
-    addPart(ag,new THREE.CylinderGeometry(.07,.085,.28,12),clothDark,[0,-.14,0]);
-    addPart(ag,new THREE.CylinderGeometry(.055,.07,.29,12),skin,[0,-.42,0]);
-    addPart(ag,new THREE.SphereGeometry(.065,12,8),skin2,[0,-.59,0]);
-
-    for(let i=0;i<3;i++){
-      addPart(ag,new THREE.CylinderGeometry(.012,.012,.055,8),skin2,[side*(i-1)*.018,-.63,-.015]);
-    }
-
-    g.add(ag);
-  }
-
-  arm(-1,a.leftArm||'down');
-  arm(1,a.rightArm||'down');
-
-  function standingLeg(side){
-    const lg=new THREE.Group();
-    lg.position.set(side*.13,.9,0);
-    addPart(lg,new THREE.CylinderGeometry(.095,.12,.52,12),clothDark,[0,-.26,0]);
-    addPart(lg,new THREE.CylinderGeometry(.07,.085,.48,12),skin,[0,-.72,0]);
-    addPart(lg,new THREE.BoxGeometry(.16,.08,.30),shoe,[0,-.99,-.055]);
-    g.add(lg);
-  }
-
-  function sittingLeg(side){
-    const lg=new THREE.Group();
-    lg.position.set(side*.15,.68,0);
-
-    const thigh=new THREE.Group();
-    thigh.rotation.z=side*Math.PI*.48;
-    addPart(thigh,new THREE.CylinderGeometry(.095,.12,.48,12),clothDark,[0,-.24,0]);
-
-    const shin=new THREE.Group();
-    shin.position.set(0,-.46,0);
-    addPart(shin,new THREE.CylinderGeometry(.07,.085,.48,12),skin,[0,-.24,0]);
-    addPart(shin,new THREE.BoxGeometry(.16,.08,.30),shoe,[0,-.51,-.055]);
-
-    thigh.add(shin);
-    lg.add(thigh);
-    g.add(lg);
-  }
-
-  function sleepingLeg(side){
-    const lg=new THREE.Group();
-    lg.position.set(side*.13,.43,0);
-    lg.rotation.z=side*.05;
-    addPart(lg,new THREE.CylinderGeometry(.095,.12,.58,12),clothDark,[0,-.29,0]);
-    addPart(lg,new THREE.CylinderGeometry(.07,.085,.48,12),skin,[0,-.76,0]);
-    addPart(lg,new THREE.BoxGeometry(.16,.08,.30),shoe,[0,-1.02,-.055]);
-    g.add(lg);
-  }
-
-  if(pose==='standing'){
-    standingLeg(-1); standingLeg(1);
-  }else if(pose==='sitting'){
-    sittingLeg(-1); sittingLeg(1);
-    g.position.y=.05;
-  }else{
-    sleepingLeg(-1); sleepingLeg(1);
-  }
-
-  if(a.head==='left')head.rotation.y=.5;
-  if(a.head==='right')head.rotation.y=-.5;
-  if(a.head==='up')head.rotation.x=-.35;
-  if(a.head==='down')head.rotation.x=.35;
-
-  return g;
+  // lying down: rotate the whole body so the face points up
+  if(pose==='sleeping'){body.rotation.x=Math.PI/2;body.position.set(0,.14*s,-.91*s);}
+  return root;
 }
 
 function buildBedMesh(col,action){
@@ -1511,6 +1518,11 @@ let playbackCamActive=false,objCamPathActive=false;
 document.addEventListener('keydown',e=>{
   keys[e.code]=true;
   if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
+    // Shortcuts while flying through the 3D world (Camera Path stage)
+  if(!e.repeat&&STATE.ui.stage==='camera'&&(isFlyActive||isPointerLocked)){
+    if(e.code==='KeyG'){e.preventDefault();releaseGodEntity();return;}
+    if(e.code==='KeyT'){e.preventDefault();addAnchor();return;}
+  }
   if(e.code==='Escape'){
     e.preventDefault();
     if(isFlyActive){
@@ -1732,6 +1744,7 @@ function addAnchor(){
   STATE.ui.selectedAnchor=anchor;
   rebuildCameraFrames(shot);
   rebuildPath();
+    updatePathVisibility();
   updateUI();
   showToast('Anchor '+(idx+1)+' placed');
 }
@@ -1750,38 +1763,56 @@ function deleteAnchor(id){
 }
 
 // ── CAMERA FRAME GENERATION ────────────────────────────────────
-function lerpAngle(a,b,t){
-  let d=b-a;while(d>180)d-=360;while(d<-180)d+=360;return a+d*t;
-}
-
 function smoothstep(t){return t<0.5?2*t*t:-1+(4-2*t)*t;}
 
+// Catmull-Rom through every anchor: passes through each anchor with continuous velocity (no stopping).
+function catmull(p0,p1,p2,p3,t){
+  const t2=t*t,t3=t2*t;
+  return .5*((2*p1)+(-p0+p2)*t+(2*p0-5*p1+4*p2-p3)*t2+(-p0+3*p1-3*p2+p3)*t3);
+}
+function camSplineSampler(anchors){
+  const n=anchors.length;
+  const unwrap=v=>{const o=[v[0]];for(let i=1;i<n;i++){const d=((v[i]-o[i-1]+180)%360+360)%360-180;o.push(o[i-1]+d);}return o;};
+  const ch={
+    x:anchors.map(a=>a.pos.x), y:anchors.map(a=>a.pos.y), z:anchors.map(a=>a.pos.z),
+    pitch:unwrap(anchors.map(a=>a.rot.pitch||0)),
+    yaw:unwrap(anchors.map(a=>a.rot.yaw||0)),
+    roll:unwrap(anchors.map(a=>a.rot.roll||0)),
+    fov:anchors.map(a=>a.fov||60)
+  };
+  return u=>{
+    const seg=Math.min(Math.floor(u),n-2), t=u-seg, out={};
+    for(const k in ch){const v=ch[k];out[k]=catmull(v[Math.max(0,seg-1)],v[seg],v[seg+1],v[Math.min(n-1,seg+2)],t);}
+    return out;
+  };
+}
 function rebuildCameraFrames(shot){
   shot.cameraFrames=[];
-  const anchors=shot.cameraPath.anchors;
-  if(anchors.length<2)return;
-  const segCount=anchors.length-1;
-  const totalFrames=segCount*FPS;
-  for(let f=0;f<totalFrames;f++){
-    const t=f/FPS;
-    const segI=Math.min(Math.floor(f/FPS),segCount-1);
-    const local=(f-segI*FPS)/FPS;
-    const ease=smoothstep(local);
-    const a=anchors[segI],b=anchors[segI+1];
+  const A=shot.cameraPath.anchors, n=A.length;
+  if(n<2)return;
+  const segCount=n-1, total=segCount*FPS+1, SUB=32, M=segCount*SUB;
+  const sample=camSplineSampler(A);
+  // dense arc-length table: constant camera speed from first anchor to last
+  const dense=[sample(0)], cum=[0];
+  for(let i=1;i<=M;i++){
+    const d=sample(i*segCount/M);
+    dense.push(d);
+    cum.push(cum[i-1]+Math.hypot(d.x-dense[i-1].x,d.y-dense[i-1].y,d.z-dense[i-1].z));
+  }
+  const L=cum[M]||1;
+  let j=1;
+  for(let f=0;f<total;f++){
+    const target=L*f/(total-1);
+    while(j<M&&cum[j]<target)j++;
+    const a=dense[j-1], b=dense[j];
+    const span=(cum[j]-cum[j-1])||1, t=clamp((target-cum[j-1])/span,0,1);
+    const p=k=>lerp(a[k],b[k],t);
     shot.cameraFrames.push({
       frame:f,
-      time:t,
-      position:{
-        x:lerp(a.pos.x,b.pos.x,ease),
-        y:lerp(a.pos.y,b.pos.y,ease),
-        z:lerp(a.pos.z,b.pos.z,ease)
-      },
-      rotation:{
-        pitch:lerpAngle(a.rot.pitch||0,b.rot.pitch||0,ease),
-        yaw:lerpAngle(a.rot.yaw||0,b.rot.yaw||0,ease),
-        roll:lerpAngle(a.rot.roll||0,b.rot.roll||0,ease)
-      },
-      fov:lerp(a.fov||60,b.fov||60,ease)
+      time:f/FPS,
+      position:{x:p('x'),y:p('y'),z:p('z')},
+      rotation:{pitch:p('pitch'),yaw:p('yaw'),roll:p('roll')},
+      fov:p('fov')
     });
   }
 }
@@ -2360,9 +2391,8 @@ function updatePathStatus(){
   const el=document.getElementById('path-status');
   const shot=activeShot();
   if(!shot||shot.cameraPath.anchors.length<2){el.innerHTML='Need at least <b>2 anchors</b> for a path.';return;}
-  const n=shot.cameraPath.anchors.length;
-  const segs=n-1;const dur=segs*SEGMENT_DUR;const frames=dur*FPS;
-  el.innerHTML=`<b>${n}</b> anchors · <b>${segs}</b> segs · <b>${dur.toFixed(1)}s</b> · <b>${frames}</b> frames @ 12 FPS`;
+  const n=shot.cameraPath.anchors.length, segs=n-1, frames=shot.cameraFrames.length, dur=frames/FPS;
+  el.innerHTML=`<b>${n}</b> anchors · <b>${segs}</b> segs · <b>${dur.toFixed(1)}s</b> · <b>${frames}</b> frames @ ${FPS} FPS · smooth`;
 }
 
 function updateGodDetail(){
@@ -2464,6 +2494,7 @@ function updateObjectDetail(){
       <div class="rot-axis-row"><span class="rot-axis-label">Left arm</span><select id="obj-action-left" style="flex:1">${['down','raised','forward','crossed','hip'].map(v=>`<option value="${v}" ${a.leftArm===v?'selected':''}>${v}</option>`).join('')}</select></div>
       <div class="rot-axis-row"><span class="rot-axis-label">Right arm</span><select id="obj-action-right" style="flex:1">${['down','raised','forward','crossed','hip'].map(v=>`<option value="${v}" ${a.rightArm===v?'selected':''}>${v}</option>`).join('')}</select></div>
       <div class="rot-axis-row"><span class="rot-axis-label">Head</span><select id="obj-action-head" style="flex:1">${['forward','left','right','up','down'].map(v=>`<option value="${v}" ${a.head===v?'selected':''}>${v}</option>`).join('')}</select></div>
+            <div class="rot-axis-row"><span class="rot-axis-label">Expression</span><select id="obj-action-expression" style="flex:1">${['neutral','happy','sad'].map(v=>`<option value="${v}" ${a.expression===v?'selected':''}>${v}</option>`).join('')}</select></div>
     </div>`:
   obj.type==='bed'?`<div class="ctrl-row" style="background:var(--panel2);padding:9px;border-radius:7px"><div class="ctrl-label">Bed Details</div><select id="obj-action-style" style="width:100%;margin:5px 0"><option value="double" ${a.style==='double'?'selected':''}>Double</option><option value="single" ${a.style==='single'?'selected':''}>Single</option></select><div class="rot-axis-row"><span class="rot-axis-label">Blanket</span><select id="obj-action-blanket" style="flex:1"><option ${a.blanket==='on'?'selected':''}>on</option><option ${a.blanket==='off'?'selected':''}>off</option></select></div><div class="rot-axis-row"><span class="rot-axis-label">Pillows</span><input id="obj-action-pillows" type="range" min="0" max="3" step="1" value="${a.pillows}" style="flex:1"><span class="rot-axis-val" id="obj-action-pillows-val">${a.pillows}</span></div></div>`:
   obj.type==='chair'?`<div class="ctrl-row" style="background:var(--panel2);padding:9px;border-radius:7px"><div class="ctrl-label">Chair Details</div><div class="rot-axis-row"><span class="rot-axis-label">Armrests</span><select id="obj-action-arms" style="flex:1"><option ${a.arms==='off'?'selected':''}>off</option><option ${a.arms==='on'?'selected':''}>on</option></select></div><div class="rot-axis-row"><span class="rot-axis-label">Cushion</span><select id="obj-action-cushion" style="flex:1"><option ${a.cushion==='on'?'selected':''}>on</option><option ${a.cushion==='off'?'selected':''}>off</option></select></div></div>`:
@@ -2532,7 +2563,7 @@ function updateObjectDetail(){
     <button class="btn-action danger" id="btn-remove-obj"><span class="ico">×</span> Remove Object</button>`;
 
   const actionInputs=[
-  ['obj-action-pose','pose'],['obj-action-left','leftArm'],['obj-action-right','rightArm'],['obj-action-head','head'],
+  ['obj-action-pose','pose'],['obj-action-left','leftArm'],['obj-action-expression','expression'],['obj-action-right','rightArm'],['obj-action-head','head'],
 ['obj-action-style','style'],['obj-action-blanket','blanket'],['obj-action-arms','arms'],
 ['obj-action-cushions','cushions'],['obj-action-cushion','cushion'],
 ['obj-action-top','top'],['obj-action-legs','legs'],
@@ -2824,6 +2855,19 @@ document.getElementById('btn-add-anchor').addEventListener('click',addAnchor);
 
 document.getElementById('in-dist-min').addEventListener('change',e=>{STATE.settings.distMin=parseFloat(e.target.value)||0.5;});
 document.getElementById('in-dist-max').addEventListener('change',e=>{STATE.settings.distMax=parseFloat(e.target.value)||5;});
+
+  // ── ANCHOR & TRAIL VISIBILITY ──────────────────────────────────
+function updatePathVisibility(){
+  const on=STATE.ui.showPath;
+  Object.values(anchorMeshes).forEach(m=>{m.visible=on;});
+  if(pathLine.obj)pathLine.obj.visible=on;
+  const b=document.getElementById('btn-toggle-path');
+  if(b)b.innerHTML=`<span class="ico">◎</span> ${on?'Hide':'Show'} Anchors &amp; Trail`;
+}
+document.getElementById('btn-toggle-path').addEventListener('click',()=>{
+  STATE.ui.showPath=!STATE.ui.showPath;
+  updatePathVisibility();
+});
 
 // ── EXPORT HELPERS ─────────────────────────────────────────────
 function showExportProgress(title){
