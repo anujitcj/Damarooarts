@@ -83,8 +83,7 @@ async function api(path,options={}){const res=await fetch('/api/'+path,{credenti
 function fmt(v){if(!v)return '';let x=String(v).replace(' ','T');if(!/[zZ]|[+-]\d\d:\d\d$/.test(x))x+='Z';const d=new Date(x);return isNaN(d)?v:d.toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})}
 function toast(t){const e=$('#toast');e.textContent=t;e.classList.remove('hidden');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.add('hidden'),3200)}
 function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
-async function verify(){const {data}=await api('me');if(!data?.ok||!data.user)throw new Error('Not authorised');state.user=data.user;$('#user-name').textContent=data.user.name||data.user.email;$('#user-role').textContent=String(data.user.role).replace('_
-                                                                                                                                                                                                                                                            ',' ');}
+async function verify(){const {data}=await api('me');if(!data?.ok||!data.user)throw new Error('Not authorised');state.user=data.user;$('#user-name').textContent=data.user.name||data.user.email;$('#user-role').textContent=String(data.user.role).replace('_',' ');}
 function roleUI(){const canEdit=['admin','script_editor'].includes(state.user.role);$('#procurement-tab').classList.remove('hidden');$('#inbox-tab').classList.toggle('hidden',!canEdit);$('#admin-tab').classList.toggle('hidden',state.user.role!=='admin');$('#inline-upload').classList.toggle('hidden',!canEdit);}
 async function loadProjectsHome(){
   try{
