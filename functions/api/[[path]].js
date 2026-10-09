@@ -1,3 +1,4 @@
+import { onRequest as procurementHandler } from "./procurement.js";
 const PROJECT_SLUG = "we-before-me";
 
 function json(data, status = 200, extraHeaders = {}) {
@@ -94,8 +95,9 @@ export async function onRequest(context) {
   const pathParts = Array.isArray(params.path) ? params.path : (params.path ? [params.path] : []);
   const path = pathParts.join("/");
   const method = request.method.toUpperCase();
-    if (path === "procurement" || path.startsWith("procurement/")) {
-    const { onRequest: procurementHandler } = await import("./procurement.js");
+
+  // Procurement (Prop List) is handled by its own module.
+  if (path === "procurement" || path.startsWith("procurement/")) {
     return procurementHandler({ request, env, params: { path: pathParts.slice(1) } });
   }
 
